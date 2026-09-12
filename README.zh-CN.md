@@ -18,7 +18,9 @@
 
 ## 📦 安装
 
-1. 安装浏览器扩展 [Tampermonkey](https://www.tampermonkey.net/)。
+1. 安装用户脚本管理器扩展：
+   - [Tampermonkey](https://www.tampermonkey.net/)（推荐）
+   - [Violentmonkey](https://violentmonkey.github.io/)（同样完全兼容）
 2. 打开以下任一脚本文件并点击 **安装**：
    - 中文界面: [`script.user.js`](./script.user.js)
    - English UI: [`script.en.user.js`](./script.en.user.js)
