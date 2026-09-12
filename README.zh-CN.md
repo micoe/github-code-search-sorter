@@ -1,6 +1,6 @@
 # GitHub Code Search Star & Updated Sorter
 
-> 一个适用于 Tampermonkey / Violentmonkey 的油猴脚本，为 GitHub 代码搜索结果中的每个仓库显示 **Star 数** 和 **最近更新时间**，并支持排序、恢复默认排序、跨页扫描汇总。
+> 一个适用于 Tampermonkey（油猴）/ Violentmonkey（暴力猴）的用户脚本，为 GitHub 代码搜索结果中的每个仓库显示 **Star 数** 和 **最近更新时间**，并支持排序、恢复默认排序、跨页扫描汇总。
 
 简体中文 | [English](./README.md)
 
@@ -19,8 +19,8 @@
 ## 📦 安装
 
 1. 安装用户脚本管理器扩展：
-   - [Violentmonkey](https://violentmonkey.github.io/)（推荐，开源轻量）
-   - [Tampermonkey](https://www.tampermonkey.net/)（同样完全兼容）
+   - [Violentmonkey（暴力猴）](https://violentmonkey.github.io/)（推荐，开源轻量）
+   - [Tampermonkey（油猴）](https://www.tampermonkey.net/)（同样完全兼容）
 2. 点击下方任一链接，脚本管理器会自动弹出安装页面：
    - 中文界面: [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
    - English UI: [Install `script.en.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.en.user.js)
@@ -52,7 +52,7 @@
 
 ### 脚本菜单命令
 
-在脚本管理器（Tampermonkey 或 Violentmonkey）的脚本菜单中可使用以下命令：
+在脚本管理器（Tampermonkey 油猴 / Violentmonkey 暴力猴）的脚本菜单中可使用以下命令：
 
 | 命令 | 说明 |
 |---|---|
@@ -71,7 +71,7 @@
 
 1. [点击此处创建 Token](https://github.com/settings/tokens/new?description=github-code-search-sorter&scopes=repo,read:project&default_expires_at=none) — 描述和权限已预填，直接点击页面上的 **Generate token** 即可。
    - （也可前往 <https://github.com/settings/tokens> 手动创建 classic token，勾选 `public_repo` 权限；或使用 fine-grained token 授予 **Public Repositories → Read-only** 权限。）
-2. 打开脚本管理器（Tampermonkey 或 Violentmonkey）的脚本菜单 → **⚙️ 设置 GitHub Token**。
+2. 打开脚本管理器（Tampermonkey 油猴 / Violentmonkey 暴力猴）的脚本菜单 → **⚙️ 设置 GitHub Token**。
 3. 粘贴 Token 并确认，页面会自动刷新。
 
 Token 仅通过 `GM_setValue` 保存在本地浏览器中，不会上传到任何第三方服务器。
