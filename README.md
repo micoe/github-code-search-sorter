@@ -1,6 +1,6 @@
 # GitHub Code Search Star & Updated Sorter
 
-> A Tampermonkey userscript that enhances GitHub code search results by displaying each repository's **Star count** and **last update date**, with support for sorting, restoring the default order, and cross-page scan aggregation.
+> A userscript (Tampermonkey / Violentmonkey) that enhances GitHub code search results by displaying each repository's **Star count** and **last update date**, with support for sorting, restoring the default order, and cross-page scan aggregation.
 
 [简体中文](./README.zh-CN.md) | English
 
@@ -52,7 +52,7 @@ Clicking **📊 Scan N Pages & Aggregate** opens a floating panel that:
 
 ### Script menu commands
 
-In Tampermonkey's script menu, the following commands are available:
+In your userscript manager's script menu (Tampermonkey or Violentmonkey), the following commands are available:
 
 | Command | Description |
 |---|---|
@@ -71,7 +71,7 @@ The script uses the public GitHub REST API. Without a Token you are limited to *
 
 1. [Click here to create a token](https://github.com/settings/tokens/new?description=github-code-search-sorter&scopes=repo,read:project&default_expires_at=none) — the description and scopes are pre-filled. Then click **Generate token**.
    - (Alternatively, go to <https://github.com/settings/tokens> and create a classic token with the `public_repo` scope, or a fine-grained token with **Public Repositories → Read-only**.)
-2. Open the Tampermonkey script menu → **⚙️ Set GitHub Token**.
+2. Open your userscript manager's script menu (Tampermonkey or Violentmonkey) → **⚙️ Set GitHub Token**.
 3. Paste the token and confirm. The page reloads automatically.
 
 The Token is stored locally via `GM_setValue` and never leaves your browser.
