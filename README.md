@@ -21,9 +21,9 @@
 1. Install a userscript manager extension:
    - [Violentmonkey](https://violentmonkey.github.io/) (recommended, open-source & lightweight)
    - [Tampermonkey](https://www.tampermonkey.net/) (also fully supported)
-2. Open one of the following script files and click **Install**:
-   - English UI: [`script.en.user.js`](./script.en.user.js)
-   - 中文界面: [`script.user.js`](./script.user.js)
+2. Click one of the links below — your userscript manager will automatically open the install page:
+   - English UI: [Install `script.en.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/main/script.en.user.js)
+   - 中文界面: [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/main/script.user.js)
 3. Visit `https://github.com/search?type=code` and run a code search.
 
 ---

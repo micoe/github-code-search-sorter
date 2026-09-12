@@ -21,9 +21,9 @@
 1. 安装用户脚本管理器扩展：
    - [Violentmonkey](https://violentmonkey.github.io/)（推荐，开源轻量）
    - [Tampermonkey](https://www.tampermonkey.net/)（同样完全兼容）
-2. 打开以下任一脚本文件并点击 **安装**：
-   - 中文界面: [`script.user.js`](./script.user.js)
-   - English UI: [`script.en.user.js`](./script.en.user.js)
+2. 点击下方任一链接，脚本管理器会自动弹出安装页面：
+   - 中文界面: [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/main/script.user.js)
+   - English UI: [Install `script.en.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/main/script.en.user.js)
 3. 访问 `https://github.com/search?type=code` 并进行代码搜索。
 
 ---
