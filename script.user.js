@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         GitHub Code Search Star & Updated Sorter
+// @name         GitHub 代码搜索 Star & 更新时间排序助手
 // @namespace    https://github.com/micoe
 // @version      1.0.0
 // @icon         https://github.githubassets.com/favicons/favicon.svg
