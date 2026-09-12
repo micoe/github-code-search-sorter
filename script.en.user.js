@@ -12,6 +12,8 @@
 // @grant        GM_registerMenuCommand
 // @connect      github.com
 // @connect      api.github.com
+// @updateURL    https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.en.user.js
+// @downloadURL  https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.en.user.js
 // ==/UserScript==
 
 (function () {
