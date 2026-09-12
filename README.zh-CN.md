@@ -69,7 +69,8 @@
 
 脚本调用 GitHub 公开 REST API。未设置 Token 时，匿名速率限制为 **60 次/小时**；设置 Token 后可提升至 **5000 次/小时**。
 
-1. 前往 <https://github.com/settings/tokens> 创建 Token（classic token 勾选 `public_repo` 权限，或使用 fine-grained token 授予 **Public Repositories → Read-only** 权限）。
+1. [点击此处创建 Token](https://github.com/settings/tokens/new?description=github-code-search-sorter&scopes=repo,read:project&default_expires_at=none) — 描述和权限已预填，直接点击页面上的 **Generate token** 即可。
+   - （也可前往 <https://github.com/settings/tokens> 手动创建 classic token，勾选 `public_repo` 权限；或使用 fine-grained token 授予 **Public Repositories → Read-only** 权限。）
 2. 打开 Tampermonkey 脚本菜单 → **⚙️ 设置 GitHub Token**。
 3. 粘贴 Token 并确认，页面会自动刷新。
 

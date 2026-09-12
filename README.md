@@ -69,7 +69,8 @@ In Tampermonkey's script menu, the following commands are available:
 
 The script uses the public GitHub REST API. Without a Token you are limited to **60 requests/hour** (anonymous). With a Token the limit rises to **5000 requests/hour**.
 
-1. Create a token at <https://github.com/settings/tokens> (classic token with `public_repo` scope, or a fine-grained token with **Public Repositories → Read-only**).
+1. [Click here to create a token](https://github.com/settings/tokens/new?description=github-code-search-sorter&scopes=repo,read:project&default_expires_at=none) — the description and scopes are pre-filled. Then click **Generate token**.
+   - (Alternatively, go to <https://github.com/settings/tokens> and create a classic token with the `public_repo` scope, or a fine-grained token with **Public Repositories → Read-only**.)
 2. Open the Tampermonkey script menu → **⚙️ Set GitHub Token**.
 3. Paste the token and confirm. The page reloads automatically.
 
