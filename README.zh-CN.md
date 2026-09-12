@@ -1,4 +1,4 @@
-# GitHub Code Search Star & Updated Sorter
+# GitHub 代码搜索 Star 与更新时间排序助手
 
 > 一个适用于 Tampermonkey（油猴）/ Violentmonkey（暴力猴）的用户脚本，为 GitHub 代码搜索结果中的每个仓库显示 **Star 数** 和 **最近更新时间**，并支持排序、恢复默认排序、跨页扫描汇总。
 
