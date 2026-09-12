@@ -19,8 +19,8 @@
 ## 📦 Installation
 
 1. Install a userscript manager extension:
-   - [Tampermonkey](https://www.tampermonkey.net/) (recommended)
-   - [Violentmonkey](https://violentmonkey.github.io/) (also fully supported)
+   - [Violentmonkey](https://violentmonkey.github.io/) (recommended, open-source & lightweight)
+   - [Tampermonkey](https://www.tampermonkey.net/) (also fully supported)
 2. Open one of the following script files and click **Install**:
    - English UI: [`script.en.user.js`](./script.en.user.js)
    - 中文界面: [`script.user.js`](./script.user.js)
