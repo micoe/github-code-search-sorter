@@ -1,6 +1,6 @@
 # GitHub Code Search Star & Updated Sorter
 
-> A userscript (Tampermonkey / Violentmonkey) that enhances GitHub code search results by displaying each repository's **Star count** and **last update date**, with support for sorting, restoring the default order, and cross-page scan aggregation.
+> A userscript (Tampermonkey / Violentmonkey) that enhances GitHub code search results by displaying each repository's **Star count**, **file last-commit date**, and **repo update date**, with dual-date sorting, default-order restore, and cross-page scan aggregation.
 
 [简体中文](./README.zh-CN.md) | English
 
@@ -8,11 +8,11 @@
 
 ## ✨ Features
 
--  **Show Stars & Update Time** — Each code search result gets a badge with the repository's ⭐ Star count and 🕒 last update date, fetched via the GitHub API.
--  **In-page Sorting** — Sort current-page results by Stars or by Update Time (click again to toggle ascending/descending); restore the original order at any time.
--  **Cross-page Scan & Aggregate** — Scan multiple result pages at once, deduplicate repositories, and list every unique repo with its Stars, update date, and the page(s) it appears on.
+-  **Show Stars & Dual Dates** — Each code search result gets a badge with the repository's ⭐ Star count, 📄 file last-commit date, and 🕒 repository update date, fetched via the GitHub API.
+-  **In-page Sorting** — Sort current-page results by Stars, File date, or Repo date (click again to toggle ascending/descending); the badge switches to show the date being sorted. Restore the original order at any time.
+-  **Cross-page Scan & Aggregate** — Scan multiple result pages at once, list every unique file (with its path, Stars, dates, and page number), deduplicate repositories, and sort by Stars / File date / Repo date.
 -  **GitHub Token Support** — Optionally set a Personal Access Token to raise the API rate limit from 60 to 5000 requests/hour.
--  **Caching** — Repository data is cached in `sessionStorage` (10-minute TTL) to reduce redundant API calls.
+-  **Caching** — Repo and file-commit data is cached in `sessionStorage` (10-minute TTL) to reduce redundant API calls.
 
 ---
 
@@ -33,22 +33,23 @@
 ### Basic usage
 
 1. Go to [GitHub Code Search](https://github.com/search?type=code).
-2. After results load, each result header shows a `⭐ <stars>  🕒 <date>` badge.
+2. After results load, each result header shows a `⭐ <stars>  📄 <file date>  🕒 <repo date>` badge (only one date is displayed at a time depending on the current sort).
 3. Use the toolbar above the results list:
    - **Sort by Stars** — sort current results by Star count.
-   - **Sort by Update Time** — sort current results by last update date.
-   - **Restore Default Order** — revert to GitHub's original ordering.
-   - **📊 Scan N Pages & Aggregate** — scan multiple pages and show a deduplicated summary panel.
+   - **Sort by File Date** — sort by the matched file's last-commit date; the badge switches to 📄.
+   - **Sort by Repo Date** — sort by the repository's last update date; the badge switches to 🕒.
+   - **Restore Default Order** — revert to GitHub's original ordering (badge returns to file date).
+   - **📊 Scan N Pages & Aggregate** — scan multiple pages and show an aggregated file-level summary panel.
 
 ### Scan panel
 
 Clicking **📊 Scan N Pages & Aggregate** opens a floating panel that:
 
-- Shows per-page statistics (result items / unique repos per page).
-- Lists all unique repositories across the scanned pages.
-- Supports sorting by ⭐ Stars or 🕒 Updated time.
-- Click a repository row to jump to the first page it appears on.
-- Supports **Rescan**.
+- Shows per-page statistics (result items, unique files, and unique repos).
+- Lists every unique **file** across the scanned pages, including its file path, repo name, page number, Stars, and date.
+- Supports sorting by ⭐ Stars, 📄 File Updated, or 🕒 Repo Updated (the displayed date follows the sort).
+- Click a row to jump to the first page it appears on.
+- Supports **Rescan**. Closing the panel keeps it hidden until you scan again.
 
 ### Script menu commands
 
@@ -85,8 +86,8 @@ Use the menu command **📄 Set Scan Pages** to choose how many result pages are
 ## 🛠️ How it works
 
 1. On GitHub code search pages (`/search?type=code`), the script observes the results list.
-2. For each result item, it extracts the repository full name (`owner/repo`).
-3. It calls `GET https://api.github.com/repos/{owner}/{repo}` to fetch `stargazers_count` and `updated_at`.
+2. For each result item, it extracts the repository full name (`owner/repo`) and the matched file path.
+3. It calls `GET /repos/{owner}/{repo}` for Stars and repo update time, and `GET /repos/{owner}/{repo}/commits?path={file}` for the file's last-commit date.
 4. Results are rendered as an inline badge in each result's header bar.
 5. Sorting and scanning operate on the DOM elements; the original order is tracked via a `WeakMap` so it can be restored.
 
@@ -104,6 +105,7 @@ Use the menu command **📄 Set Scan Pages** to choose how many result pages are
 - GitHub may change its page DOM structure, which could break the result parsing. If the badge stops appearing, please open an issue.
 - The anonymous API rate limit (60/hour) is shared across all scripts/browsers using your IP. Setting a Token is strongly recommended.
 - The scan feature fetches page HTML and parses it locally; large scan ranges may take a while.
+- Each matched file requires an extra Commits API call to get its file date, so scanning consumes more API quota than just showing Stars. A Token is highly recommended.
 
 ---
 

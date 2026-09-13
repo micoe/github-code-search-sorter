@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         GitHub 代码搜索 Star & 更新时间排序助手
 // @namespace    https://github.com/micoe
-// @version      1.0.0
+// @version      1.2.0
 // @icon         https://github.githubassets.com/favicons/favicon.svg
-// @description  在 GitHub 代码搜索结果中显示仓库 Star 数和更新时间，支持排序、恢复默认、跨页扫描汇总
+// @description  在 GitHub 代码搜索结果中显示仓库 Star 数和文件/仓库更新时间，支持双日期排序、恢复默认、跨页扫描汇总
 // @author       micoe
 // @match        https://github.com/search*
 // @grant        GM_xmlhttpRequest
@@ -23,13 +23,14 @@
   // ========== Token 管理 ==========
   let GITHUB_TOKEN = GM_getValue('github_token', '');
   const CACHE_PREFIX = 'ghcs_star_updated_';
+  const FILE_CACHE_PREFIX = 'ghcs_file_commit_';
 
   function clearRepoCache() {
     try {
       const keys = [];
       for (let i = 0; i < sessionStorage.length; i++) {
         const k = sessionStorage.key(i);
-        if (k && k.startsWith(CACHE_PREFIX)) keys.push(k);
+        if (k && (k.startsWith(CACHE_PREFIX) || k.startsWith(FILE_CACHE_PREFIX))) keys.push(k);
       }
       keys.forEach((k) => sessionStorage.removeItem(k));
     } catch (e) {}
@@ -89,6 +90,7 @@
 
   // ========== 工具函数 ==========
   const cacheKey = (repo) => `${CACHE_PREFIX}${repo}`;
+  const fileCacheKey = (repo, path) => `${FILE_CACHE_PREFIX}${repo}\u0000${path}`;
 
   const SYSTEM_PATHS = new Set([
     'search', 'settings', 'login', 'signup', 'logout', 'notifications',
@@ -122,6 +124,17 @@
     return null;
   }
 
+  function extractFilePath(container) {
+    const links = container.querySelectorAll('a[href]');
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      if (!href) continue;
+      const m = href.match(/^\/([^/]+)\/([^/]+)\/blob\/[^/]+\/([^?#]+)/);
+      if (m) return decodeURIComponent(m[3]);
+    }
+    return null;
+  }
+
   function getCached(repo) {
     try {
       const raw = sessionStorage.getItem(cacheKey(repo));
@@ -146,9 +159,34 @@
     } catch (e) {}
   }
 
+  function getFileCached(repo, path) {
+    try {
+      const raw = sessionStorage.getItem(fileCacheKey(repo, path));
+      if (!raw) return null;
+      const data = JSON.parse(raw);
+      if (Date.now() - data.ts > CONFIG.cacheTTL) {
+        sessionStorage.removeItem(fileCacheKey(repo, path));
+        return null;
+      }
+      return data.value;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function setFileCache(repo, path, value) {
+    try {
+      sessionStorage.setItem(
+        fileCacheKey(repo, path),
+        JSON.stringify({ ts: Date.now(), value })
+      );
+    } catch (e) {}
+  }
+
   function formatDate(isoString) {
     if (!isoString) return 'N/A';
     const d = new Date(isoString);
+    if (isNaN(d.getTime())) return 'N/A';
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
@@ -161,6 +199,16 @@
       return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
     }
     return String(n);
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   // ========== API ==========
@@ -195,8 +243,41 @@
     });
   }
 
+  function fetchFileLastCommit(repoFullName, filePath) {
+    return new Promise((resolve) => {
+      if (!repoFullName || !filePath) return resolve(null);
+
+      const cached = getFileCached(repoFullName, filePath);
+      if (cached) return resolve(cached);
+
+      const headers = { Accept: 'application/vnd.github+json' };
+      if (GITHUB_TOKEN) headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
+
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: `https://api.github.com/repos/${repoFullName}/commits?path=${encodeURIComponent(filePath)}&per_page=1`,
+        headers,
+        onload: (res) => {
+          try {
+            const data = JSON.parse(res.responseText);
+            if (Array.isArray(data) && data.length > 0) {
+              const commitDate = data[0].commit.committer.date;
+              setFileCache(repoFullName, filePath, commitDate);
+              resolve(commitDate);
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            resolve(null);
+          }
+        },
+        onerror: () => resolve(null),
+      });
+    });
+  }
+
   // ========== 创建徽章 ==========
-  function createBadge(info) {
+  function createBadge(repoInfo, fileCommitDate) {
     const badge = document.createElement('span');
     badge.className = 'ghcs-extra-info';
     badge.style.cssText = `
@@ -218,9 +299,12 @@
       z-index: 10;
       pointer-events: auto;
     `;
+    const fileDateStr = fileCommitDate ? formatDate(fileCommitDate) : 'N/A';
+    const repoDateStr = formatDate(repoInfo.updated);
     badge.innerHTML = `
-      <span title="Star 数">⭐ ${formatStars(info.stars)}</span>
-      <span title="最近更新">🕒 ${formatDate(info.updated)}</span>
+      <span title="Star 数">⭐ ${formatStars(repoInfo.stars)}</span>
+      <span class="ghcs-date-file" title="文件最后更新">📄 ${fileDateStr}</span>
+      <span class="ghcs-date-repo" title="仓库最后更新" style="display:none;">🕒 ${repoDateStr}</span>
     `;
     return badge;
   }
@@ -250,18 +334,36 @@
     for (const c of hb.children) {
       if (c.classList && c.classList.contains('ghcs-extra-info')) {
         const text = c.textContent;
-        let stars = 0, updated = 0;
+        let stars = 0, repoDate = 0, fileDate = 0;
         const sm = text.match(/⭐\s*([\d.]+k?)/);
         if (sm) {
           let v = sm[1];
           stars = v.endsWith('k') ? parseFloat(v) * 1000 : parseInt(v, 10) || 0;
         }
-        const dm = text.match(/🕒\s*([\d-]+)/);
-        if (dm) updated = new Date(dm[1]).getTime() || 0;
-        return { stars, updated };
+        const rm = text.match(/🕒\s*([\d-]+)/);
+        if (rm) repoDate = new Date(rm[1]).getTime() || 0;
+        const fm = text.match(/📄\s*([\d-]+)/);
+        if (fm) fileDate = new Date(fm[1]).getTime() || 0;
+        return { stars, repoDate, fileDate };
       }
     }
     return null;
+  }
+
+  function updateBadgeDateDisplay(mode) {
+    const all = document.querySelectorAll('div[class*="codeResultWrapper"] .ghcs-extra-info');
+    all.forEach((badge) => {
+      const fileSpan = badge.querySelector('.ghcs-date-file');
+      const repoSpan = badge.querySelector('.ghcs-date-repo');
+      if (!fileSpan || !repoSpan) return;
+      if (mode === 'repoDate') {
+        fileSpan.style.display = 'none';
+        repoSpan.style.display = 'inline';
+      } else {
+        fileSpan.style.display = 'inline';
+        repoSpan.style.display = 'none';
+      }
+    });
   }
 
   // ========== 原始位置记录 ==========
@@ -294,52 +396,80 @@
     if (resultItems.length === 0) return;
 
     const repoMap = new Map();
+    const fileQuerySet = new Set();
 
     resultItems.forEach((item) => {
       const repoFullName = extractRepoFullName(item);
       if (!repoFullName) return;
+      const filePath = extractFilePath(item);
       if (!repoMap.has(repoFullName)) repoMap.set(repoFullName, []);
-      repoMap.get(repoFullName).push({ el: item, repoFullName });
+      repoMap.get(repoFullName).push({ el: item, repoFullName, filePath });
+      if (filePath) fileQuerySet.add(repoFullName + '\u0000' + filePath);
     });
 
     if (repoMap.size === 0) return;
 
     const repos = Array.from(repoMap.keys());
+    const fileQueries = Array.from(fileQuerySet).map((k) => {
+      const idx = k.indexOf('\u0000');
+      return { repo: k.slice(0, idx), filePath: k.slice(idx + 1) };
+    });
 
+    const repoInfoMap = new Map();
     for (let i = 0; i < repos.length; i += CONFIG.batchSize) {
       const batch = repos.slice(i, i + CONFIG.batchSize);
       const results = await Promise.all(batch.map((r) => fetchRepoInfo(r)));
+      batch.forEach((repo, idx) => repoInfoMap.set(repo, results[idx]));
+    }
 
-      batch.forEach((repo, idx) => {
-        const info = results[idx];
-        const entries = repoMap.get(repo) || [];
-        entries.forEach(({ el }) => {
-          if (hasOwnBadge(el)) return;
-
-          const headerBar = findOwnHeaderBar(el);
-          if (!headerBar) return;
-
-          const pos = getComputedStyle(headerBar).position;
-          if (pos === 'static') {
-            headerBar.style.setProperty('position', 'relative', 'important');
-          }
-
-          if (!headerBar.dataset.ghcsPadded) {
-            const curPr = parseInt(getComputedStyle(headerBar).paddingRight, 10) || 0;
-            if (curPr < 160) {
-              headerBar.style.setProperty('padding-right', '160px', 'important');
-            }
-            headerBar.dataset.ghcsPadded = '1';
-          }
-
-          const badge = createBadge(info);
-          headerBar.appendChild(badge);
-        });
+    const fileDateMap = new Map();
+    for (let i = 0; i < fileQueries.length; i += CONFIG.batchSize) {
+      const batch = fileQueries.slice(i, i + CONFIG.batchSize);
+      const results = await Promise.all(
+        batch.map((q) => fetchFileLastCommit(q.repo, q.filePath))
+      );
+      batch.forEach((q, idx) => {
+        fileDateMap.set(q.repo + '\u0000' + q.filePath, results[idx]);
       });
     }
 
+    repoMap.forEach((entries, repo) => {
+      const info = repoInfoMap.get(repo);
+      if (!info) return;
+      entries.forEach(({ el, filePath }) => {
+        if (hasOwnBadge(el)) return;
+        const headerBar = findOwnHeaderBar(el);
+        if (!headerBar) return;
+
+        const pos = getComputedStyle(headerBar).position;
+        if (pos === 'static') {
+          headerBar.style.setProperty('position', 'relative', 'important');
+        }
+
+        if (!headerBar.dataset.ghcsPadded) {
+          const curPr = parseInt(getComputedStyle(headerBar).paddingRight, 10) || 0;
+          if (curPr < 160) {
+            headerBar.style.setProperty('padding-right', '160px', 'important');
+          }
+          headerBar.dataset.ghcsPadded = '1';
+        }
+
+        const fileCommitDate = filePath
+          ? fileDateMap.get(repo + '\u0000' + filePath)
+          : null;
+        const badge = createBadge(info, fileCommitDate);
+        headerBar.appendChild(badge);
+      });
+    });
+
     ensureOriginalCaptured();
     addSortButtons();
+
+    if (currentSort === 'repoDate') {
+      updateBadgeDateDisplay('repoDate');
+    } else {
+      updateBadgeDateDisplay('fileDate');
+    }
   }
 
   // ========== 页内排序 ==========
@@ -378,9 +508,13 @@
     btnStars.textContent = '按 Star 排序';
     btnStars.style.cssText = btnStyle;
 
-    const btnUpdated = document.createElement('button');
-    btnUpdated.textContent = '按更新时间排序';
-    btnUpdated.style.cssText = btnStyle;
+    const btnFileDate = document.createElement('button');
+    btnFileDate.textContent = '按文件更新日期排序';
+    btnFileDate.style.cssText = btnStyle;
+
+    const btnRepoDate = document.createElement('button');
+    btnRepoDate.textContent = '按仓库更新日期排序';
+    btnRepoDate.style.cssText = btnStyle;
 
     const btnReset = document.createElement('button');
     btnReset.textContent = '恢复默认排序';
@@ -391,12 +525,14 @@
     btnScan.style.cssText = btnStyle + 'background-color: #0969da; color: #fff; border-color: #0969da;';
 
     btnStars.addEventListener('click', () => toggleSort('stars'));
-    btnUpdated.addEventListener('click', () => toggleSort('updated'));
+    btnFileDate.addEventListener('click', () => toggleSort('fileDate'));
+    btnRepoDate.addEventListener('click', () => toggleSort('repoDate'));
     btnReset.addEventListener('click', () => restoreDefaultOrder());
     btnScan.addEventListener('click', () => scanAllPages());
 
     bar.appendChild(btnStars);
-    bar.appendChild(btnUpdated);
+    bar.appendChild(btnFileDate);
+    bar.appendChild(btnRepoDate);
     bar.appendChild(btnReset);
     bar.appendChild(btnScan);
     list.parentNode.insertBefore(bar, list);
@@ -419,10 +555,18 @@
 
     const all = Array.from(document.querySelectorAll('div[class*="codeResultWrapper"]'));
 
+    if (currentSort === 'repoDate') {
+      updateBadgeDateDisplay('repoDate');
+    } else {
+      updateBadgeDateDisplay('fileDate');
+    }
+
+    if (!currentSort) return;
+
     const withKeys = [];
     all.forEach((el) => {
       const key = readOwnBadge(el);
-      if (key) withKeys.push({ el, stars: key.stars, updated: key.updated });
+      if (key) withKeys.push({ el, ...key });
     });
 
     if (withKeys.length === 0) return;
@@ -430,7 +574,8 @@
     withKeys.sort((a, b) => {
       let va, vb;
       if (currentSort === 'stars') { va = a.stars; vb = b.stars; }
-      else if (currentSort === 'updated') { va = a.updated; vb = b.updated; }
+      else if (currentSort === 'fileDate') { va = a.fileDate; vb = b.fileDate; }
+      else if (currentSort === 'repoDate') { va = a.repoDate; vb = b.repoDate; }
       else return 0;
       return sortAsc ? va - vb : vb - va;
     });
@@ -465,12 +610,17 @@
         parent.appendChild(el);
       }
     }
+
+    updateBadgeDateDisplay('fileDate');
   }
 
   // ========== 跨页扫描 ==========
   let isScanning = false;
   let scanPanelData = [];
-  let scanPanelSort = { field: 'stars', asc: false };
+  // 默认按文件更新时间排序，并在面板上默认显示文件日期
+  let scanPanelSort = { field: 'fileUpdated', asc: false };
+  // 用户是否主动关闭过面板（避免自动刷新时又把它弹出来）
+  let scanPanelUserClosed = false;
 
   function fetchPageHtml(url) {
     return new Promise((resolve, reject) => {
@@ -489,16 +639,19 @@
     });
   }
 
-  // 【改动】返回结果项总数和仓库集合
-  function parseReposFromHtml(html) {
+  function parseFilesFromHtml(html) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const wrappers = doc.querySelectorAll('div[class*="codeResultWrapper"]');
-    const repos = new Set();
+    const files = [];
+    const repoSet = new Set();
     wrappers.forEach((el) => {
       const r = extractRepoFullName(el);
-      if (r) repos.add(r);
+      if (!r) return;
+      const p = extractFilePath(el);
+      files.push({ repo: r, filePath: p });
+      repoSet.add(r);
     });
-    return { totalItems: wrappers.length, repos: Array.from(repos) };
+    return { totalItems: wrappers.length, files, uniqueRepos: repoSet.size };
   }
 
   async function scanAllPages() {
@@ -515,26 +668,33 @@
     }
 
     isScanning = true;
+    scanPanelUserClosed = false;
+    showScanPanel(true);
 
     if (!GITHUB_TOKEN && CONFIG.scanPages > 2) {
       const proceed = confirm(
         '未设置 GitHub Token，扫描 ' + CONFIG.scanPages + ' 页可能触发匿名 API 限流（60 次/小时）。\n' +
+        '每个文件还需要一次 Commits API 调用以获取文件更新日期，消耗会更大。\n' +
         '建议先用菜单命令「⚙️ 设置 GitHub Token」配置 Token。\n\n是否继续？'
       );
-      if (!proceed) { isScanning = false; return; }
+      if (!proceed) {
+        isScanning = false;
+        showScanPanel().style.display = 'none';
+        return;
+      }
     }
 
-    showScanPanel();
-
     try {
-      const repoToPages = new Map();
-      // 【改动】收集每页统计
+      // key: repo\u0000path  ->  Set(pages)
+      const fileToPages = new Map();
+      const allRepos = new Set();
       const pageStats = [];
 
+      // 页面扫描：0-30%
       for (let p = 1; p <= CONFIG.scanPages; p++) {
         renderScanPanelProgress(
           '正在扫描第 ' + p + ' / ' + CONFIG.scanPages + ' 页…',
-          (p - 1) / CONFIG.scanPages * 50
+          (p - 1) / CONFIG.scanPages * 30
         );
 
         const url = new URL(location.href);
@@ -542,11 +702,13 @@
 
         try {
           const html = await fetchPageHtml(url.toString());
-          const { totalItems, repos } = parseReposFromHtml(html);
-          pageStats.push({ page: p, items: totalItems, unique: repos.length });
-          repos.forEach((r) => {
-            if (!repoToPages.has(r)) repoToPages.set(r, new Set());
-            repoToPages.get(r).add(p);
+          const { totalItems, files, uniqueRepos } = parseFilesFromHtml(html);
+          pageStats.push({ page: p, items: totalItems, unique: uniqueRepos });
+          files.forEach(({ repo, filePath }) => {
+            const key = repo + '\u0000' + (filePath || '');
+            if (!fileToPages.has(key)) fileToPages.set(key, new Set());
+            fileToPages.get(key).add(p);
+            allRepos.add(repo);
           });
         } catch (e) {
           console.warn('扫描第 ' + p + ' 页失败：', e);
@@ -554,33 +716,60 @@
         }
       }
 
-      const repoList = Array.from(repoToPages.keys());
-      if (repoList.length === 0) {
-        renderScanPanelError('未从页面提取到任何仓库。可能是 GitHub 页面结构变化或搜索结果为空。');
+      if (fileToPages.size === 0) {
+        renderScanPanelError('未从页面提取到任何文件。可能是 GitHub 页面结构变化或搜索结果为空。');
         isScanning = false;
         return;
       }
 
-      const infos = [];
+      // 仓库信息：30-50%
+      const repoList = Array.from(allRepos);
+      const repoInfoMap = new Map();
       for (let i = 0; i < repoList.length; i += CONFIG.batchSize) {
         const batch = repoList.slice(i, i + CONFIG.batchSize);
         const results = await Promise.all(batch.map((r) => fetchRepoInfo(r)));
-        batch.forEach((repo, idx) => {
-          infos.push({
-            repo,
-            stars: results[idx].stars,
-            updated: results[idx].updated,
-            pages: Array.from(repoToPages.get(repo)).sort((a, b) => a - b),
-          });
-        });
-        const progress = 50 + ((i + batch.length) / repoList.length) * 50;
+        batch.forEach((repo, idx) => repoInfoMap.set(repo, results[idx]));
+        const progress = 30 + ((i + batch.length) / repoList.length) * 20;
         renderScanPanelProgress(
           '正在获取仓库信息 ' + (i + batch.length) + ' / ' + repoList.length + '…',
           progress
         );
       }
 
-      // 【改动】把统计信息一起传进去
+      // 文件提交日期：50-100%
+      const fileEntries = Array.from(fileToPages.keys()).map((k) => {
+        const idx = k.indexOf('\u0000');
+        return { key: k, repo: k.slice(0, idx), filePath: k.slice(idx + 1) || null };
+      });
+      const fileEntriesWithPath = fileEntries.filter((e) => e.filePath);
+
+      const fileDateMap = new Map();
+      for (let i = 0; i < fileEntriesWithPath.length; i += CONFIG.batchSize) {
+        const batch = fileEntriesWithPath.slice(i, i + CONFIG.batchSize);
+        const results = await Promise.all(
+          batch.map((e) => fetchFileLastCommit(e.repo, e.filePath))
+        );
+        batch.forEach((e, idx) => fileDateMap.set(e.key, results[idx]));
+        const progress = 50 + ((i + batch.length) / fileEntriesWithPath.length) * 50;
+        renderScanPanelProgress(
+          '正在获取文件更新日期 ' + (i + batch.length) + ' / ' + fileEntriesWithPath.length + '…',
+          progress
+        );
+      }
+
+      // 合并
+      const infos = fileEntries.map((e) => {
+        const repoInfo = repoInfoMap.get(e.repo) || {};
+        return {
+          repo: e.repo,
+          filePath: e.filePath,
+          stars: repoInfo.stars != null ? repoInfo.stars : null,
+          repoUpdated: repoInfo.updated || null,
+          fileUpdated: e.filePath ? (fileDateMap.get(e.key) || null) : null,
+          pages: Array.from(fileToPages.get(e.key)).sort((a, b) => a - b),
+        };
+      });
+
       renderScanPanelResults(infos, pageStats);
     } catch (e) {
       console.error(e);
@@ -591,10 +780,14 @@
   }
 
   // ========== 扫描面板 ==========
-  function showScanPanel() {
+  function showScanPanel(forceOpen) {
     let panel = document.getElementById('ghcs-scan-panel');
     if (panel) {
-      panel.style.display = 'flex';
+      // forceOpen=true 时强制显示（例如用户主动点扫描/重新扫描）
+      // 否则如果用户已经点过关闭，就保持隐藏状态
+      if (forceOpen || !scanPanelUserClosed) {
+        panel.style.display = 'flex';
+      }
       return panel;
     }
 
@@ -604,7 +797,7 @@
       position: fixed;
       top: 60px;
       right: 16px;
-      width: 460px;
+      width: 480px;
       max-width: calc(100vw - 32px);
       max-height: 80vh;
       background: var(--bgColor-default, #ffffff);
@@ -625,9 +818,10 @@
         <button class="ghcs-sp-close" style="background:transparent;border:none;cursor:pointer;font-size:16px;color:var(--fgColor-muted,#57606a);line-height:1;">✕</button>
       </div>
       <div class="ghcs-sp-stats" style="display:none;padding:6px 12px;font-size:11px;color:var(--fgColor-muted,#57606a);border-bottom:1px solid var(--borderColor-muted,#eaeef2);line-height:1.6;"></div>
-      <div class="ghcs-sp-toolbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--borderColor-default,#d0d7de);">
+      <div class="ghcs-sp-toolbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--borderColor-default,#d0d7de);flex-wrap:wrap;">
         <button class="ghcs-sp-sort-stars" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">⭐ Star</button>
-        <button class="ghcs-sp-sort-updated" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">🕒 更新</button>
+        <button class="ghcs-sp-sort-file" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">📄 文件更新</button>
+        <button class="ghcs-sp-sort-repo" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">🕒 仓库更新</button>
         <button class="ghcs-sp-rescan" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;margin-left:auto;">重新扫描</button>
       </div>
       <div class="ghcs-sp-progress" style="display:none;padding:8px 12px;border-bottom:1px solid var(--borderColor-default,#d0d7de);">
@@ -643,15 +837,21 @@
 
     panel.querySelector('.ghcs-sp-close').addEventListener('click', () => {
       panel.style.display = 'none';
+      scanPanelUserClosed = true;
     });
     panel.querySelector('.ghcs-sp-sort-stars').addEventListener('click', () => {
       if (scanPanelSort.field === 'stars') scanPanelSort.asc = !scanPanelSort.asc;
       else { scanPanelSort.field = 'stars'; scanPanelSort.asc = false; }
       renderScanPanelResults(scanPanelData, panel._stats);
     });
-    panel.querySelector('.ghcs-sp-sort-updated').addEventListener('click', () => {
-      if (scanPanelSort.field === 'updated') scanPanelSort.asc = !scanPanelSort.asc;
-      else { scanPanelSort.field = 'updated'; scanPanelSort.asc = false; }
+    panel.querySelector('.ghcs-sp-sort-file').addEventListener('click', () => {
+      if (scanPanelSort.field === 'fileUpdated') scanPanelSort.asc = !scanPanelSort.asc;
+      else { scanPanelSort.field = 'fileUpdated'; scanPanelSort.asc = false; }
+      renderScanPanelResults(scanPanelData, panel._stats);
+    });
+    panel.querySelector('.ghcs-sp-sort-repo').addEventListener('click', () => {
+      if (scanPanelSort.field === 'repoUpdated') scanPanelSort.asc = !scanPanelSort.asc;
+      else { scanPanelSort.field = 'repoUpdated'; scanPanelSort.asc = false; }
       renderScanPanelResults(scanPanelData, panel._stats);
     });
     panel.querySelector('.ghcs-sp-rescan').addEventListener('click', () => {
@@ -676,42 +876,48 @@
     const panel = showScanPanel();
     panel.querySelector('.ghcs-sp-progress').style.display = 'none';
     panel.querySelector('.ghcs-sp-list').innerHTML =
-      '<div style="padding:16px;color:var(--fgColor-danger,#cf222e);">' + msg + '</div>';
+      '<div style="padding:16px;color:var(--fgColor-danger,#cf222e);">' + escapeHtml(msg) + '</div>';
   }
 
-  // 【改动】接收 stats 参数，显示统计
   function renderScanPanelResults(infos, stats) {
     scanPanelData = infos;
     const panel = showScanPanel();
-    panel._stats = stats; // 缓存，供排序时复用
+    panel._stats = stats;
     panel.querySelector('.ghcs-sp-progress').style.display = 'none';
 
-    // ---- 显示统计 ----
+    // ---- 统计 ----
     const statsEl = panel.querySelector('.ghcs-sp-stats');
     if (stats && stats.length > 0) {
       const totalItems = stats.reduce((s, x) => s + (x.items || 0), 0);
+      const uniqueRepos = new Set(infos.map((i) => i.repo)).size;
       const perPage = stats.map((x) =>
-        'P.' + x.page + ':' + (x.error ? '✕' : x.items + '项/' + x.unique + '仓库')
+        'P.' + x.page + ':' + (x.error ? '✕' : x.items + '项')
       ).join('  ·  ');
       statsEl.innerHTML =
         '<div>共扫描 <b>' + stats.length + '</b> 页 · 结果项 <b>' + totalItems +
-        '</b> 个 · 去重后 <b>' + infos.length + '</b> 个唯一仓库</div>' +
+        '</b> 个 · 唯一文件 <b>' + infos.length + '</b> · 唯一仓库 <b>' + uniqueRepos + '</b></div>' +
         '<div style="opacity:0.8;margin-top:2px;">' + perPage + '</div>';
       statsEl.style.display = 'block';
     } else {
       statsEl.style.display = 'none';
     }
 
-    // ---- 渲染列表 ----
+    // ---- 列表 ----
     const list = panel.querySelector('.ghcs-sp-list');
     list.innerHTML = '';
 
+    const showRepoDate = scanPanelSort.field === 'repoUpdated';
+
     const sorted = [...infos].sort((a, b) => {
       let va, vb;
-      if (scanPanelSort.field === 'stars') { va = a.stars || 0; vb = b.stars || 0; }
-      else {
-        va = a.updated ? new Date(a.updated).getTime() : 0;
-        vb = b.updated ? new Date(b.updated).getTime() : 0;
+      if (scanPanelSort.field === 'stars') {
+        va = a.stars || 0; vb = b.stars || 0;
+      } else if (scanPanelSort.field === 'repoUpdated') {
+        va = a.repoUpdated ? new Date(a.repoUpdated).getTime() : 0;
+        vb = b.repoUpdated ? new Date(b.repoUpdated).getTime() : 0;
+      } else {
+        va = a.fileUpdated ? new Date(a.fileUpdated).getTime() : 0;
+        vb = b.fileUpdated ? new Date(b.fileUpdated).getTime() : 0;
       }
       return scanPanelSort.asc ? va - vb : vb - va;
     });
@@ -725,14 +931,25 @@
         display:flex;flex-direction:column;gap:3px;
       `;
       const pagesText = info.pages.map((p) => 'P.' + p).join(' / ');
+      const dateIcon = showRepoDate ? '🕒' : '📄';
+      const dateValue = showRepoDate ? info.repoUpdated : info.fileUpdated;
+
+      const safeRepo = escapeHtml(info.repo);
+      const safePath = escapeHtml(info.filePath || '');
+
+      const pathHtml = info.filePath
+        ? `<span style="font-size:11px;color:var(--fgColor-muted,#57606a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;" title="${safePath}">${safePath}</span>`
+        : '';
+
       row.innerHTML = `
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
-          <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${info.repo}</span>
+          <span style="font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${safeRepo}</span>
           <span style="font-size:11px;color:var(--fgColor-muted,#57606a);flex-shrink:0;">${pagesText}</span>
         </div>
+        ${pathHtml}
         <div style="display:flex;gap:12px;font-size:12px;color:var(--fgColor-muted,#57606a);">
           <span>⭐ ${formatStars(info.stars)}</span>
-          <span>🕒 ${formatDate(info.updated)}</span>
+          <span>${dateIcon} ${formatDate(dateValue)}</span>
         </div>
       `;
       row.addEventListener('click', () => {
@@ -747,8 +964,9 @@
       list.appendChild(row);
     });
 
+    const uniqueRepos = new Set(infos.map((i) => i.repo)).size;
     panel.querySelector('.ghcs-sp-header span').textContent =
-      '📊 扫描结果（共 ' + infos.length + ' 个仓库）';
+      '📊 扫描结果（' + infos.length + ' 文件 / ' + uniqueRepos + ' 仓库）';
   }
 
   // ========== 监听页面变化 ==========
