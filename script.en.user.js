@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         GitHub Code Search Star & Updated Sorter
 // @namespace    https://github.com/micoe
-// @version      1.2.0
+// @version      1.3.0
 // @icon         https://github.githubassets.com/favicons/favicon.svg
-// @description  Display repository Star count and file/repo update time in GitHub code search results, with dual-date sorting, default-order restore, and cross-page scan aggregation.
+// @description  Display repository Star count and file/repo update time in GitHub code search results, with dual-date sorting, default-order restore, cross-page scan aggregation, and click to jump to the matching file line.
 // @author       micoe
 // @match        https://github.com/search*
 // @grant        GM_xmlhttpRequest
@@ -131,6 +131,23 @@
       if (!href) continue;
       const m = href.match(/^\/([^/]+)\/([^/]+)\/blob\/[^/]+\/([^?#]+)/);
       if (m) return decodeURIComponent(m[3]);
+    }
+    return null;
+  }
+
+  // Extract the line anchor, returning { start, end } or null
+  // Supports #L10 or #L10-L20
+  function extractLineRange(container) {
+    const links = container.querySelectorAll('a[href]');
+    for (const link of links) {
+      const href = link.getAttribute('href');
+      if (!href) continue;
+      // Only handle blob links
+      if (!/^\/([^/]+)\/([^/]+)\/blob\//.test(href)) continue;
+      const m = href.match(/#L(\d+)(?:-L(\d+))?/);
+      if (m) {
+        return { start: parseInt(m[1], 10), end: m[2] ? parseInt(m[2], 10) : null };
+      }
     }
     return null;
   }
@@ -648,7 +665,13 @@
       const r = extractRepoFullName(el);
       if (!r) return;
       const p = extractFilePath(el);
-      files.push({ repo: r, filePath: p });
+      const lineRange = extractLineRange(el); // extract the line range
+      files.push({
+        repo: r,
+        filePath: p,
+        lineStart: lineRange ? lineRange.start : null,
+        lineEnd: lineRange ? lineRange.end : null,
+      });
       repoSet.add(r);
     });
     return { totalItems: wrappers.length, files, uniqueRepos: repoSet.size };
@@ -685,10 +708,13 @@
     }
 
     try {
-      // key: repo\u0000path  ->  Set(pages)
+      // key: repo\u0000path\u0000lineStart\u0000lineEnd  ->  Set(pages)
       const fileToPages = new Map();
       const allRepos = new Set();
       const pageStats = [];
+
+      const makeKey = (repo, filePath, lineStart, lineEnd) =>
+        repo + '\u0000' + (filePath || '') + '\u0000' + (lineStart || '') + '\u0000' + (lineEnd || '');
 
       // Page scanning: 0-30%
       for (let p = 1; p <= CONFIG.scanPages; p++) {
@@ -704,8 +730,8 @@
           const html = await fetchPageHtml(url.toString());
           const { totalItems, files, uniqueRepos } = parseFilesFromHtml(html);
           pageStats.push({ page: p, items: totalItems, unique: uniqueRepos });
-          files.forEach(({ repo, filePath }) => {
-            const key = repo + '\u0000' + (filePath || '');
+          files.forEach(({ repo, filePath, lineStart, lineEnd }) => {
+            const key = makeKey(repo, filePath, lineStart, lineEnd);
             if (!fileToPages.has(key)) fileToPages.set(key, new Set());
             fileToPages.get(key).add(p);
             allRepos.add(repo);
@@ -738,8 +764,14 @@
 
       // File commit dates: 50-100%
       const fileEntries = Array.from(fileToPages.keys()).map((k) => {
-        const idx = k.indexOf('\u0000');
-        return { key: k, repo: k.slice(0, idx), filePath: k.slice(idx + 1) || null };
+        const parts = k.split('\u0000');
+        return {
+          key: k,
+          repo: parts[0],
+          filePath: parts[1] || null,
+          lineStart: parts[2] ? parseInt(parts[2], 10) : null,
+          lineEnd: parts[3] ? parseInt(parts[3], 10) : null,
+        };
       });
       const fileEntriesWithPath = fileEntries.filter((e) => e.filePath);
 
@@ -763,6 +795,8 @@
         return {
           repo: e.repo,
           filePath: e.filePath,
+          lineStart: e.lineStart,
+          lineEnd: e.lineEnd,
           stars: repoInfo.stars != null ? repoInfo.stars : null,
           repoUpdated: repoInfo.updated || null,
           fileUpdated: e.filePath ? (fileDateMap.get(e.key) || null) : null,
@@ -879,6 +913,24 @@
       '<div style="padding:16px;color:var(--fgColor-danger,#cf222e);">' + escapeHtml(msg) + '</div>';
   }
 
+  // Build a GitHub file URL, including the line anchor when available
+  function buildFileUrl(repo, filePath, lineStart, lineEnd) {
+    if (!filePath) return 'https://github.com/' + repo;
+    const encodedPath = filePath
+      .split('/')
+      .map((seg) => encodeURIComponent(seg))
+      .join('/');
+    let url = 'https://github.com/' + repo + '/blob/HEAD/' + encodedPath;
+    if (lineStart) {
+      if (lineEnd && lineEnd !== lineStart) {
+        url += '#L' + lineStart + '-L' + lineEnd;
+      } else {
+        url += '#L' + lineStart;
+      }
+    }
+    return url;
+  }
+
   function renderScanPanelResults(infos, stats) {
     scanPanelData = infos;
     const panel = showScanPanel();
@@ -937,8 +989,16 @@
       const safeRepo = escapeHtml(info.repo);
       const safePath = escapeHtml(info.filePath || '');
 
+      // Show the line numbers after the path (if any)
+      let pathSuffix = '';
+      if (info.lineStart) {
+        pathSuffix = info.lineEnd && info.lineEnd !== info.lineStart
+          ? ' : L' + info.lineStart + '-L' + info.lineEnd
+          : ' : L' + info.lineStart;
+      }
+
       const pathHtml = info.filePath
-        ? `<span style="font-size:11px;color:var(--fgColor-muted,#57606a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;" title="${safePath}">${safePath}</span>`
+        ? `<span style="font-size:11px;color:var(--fgColor-muted,#57606a);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:block;" title="${safePath}${pathSuffix}">${safePath}${pathSuffix}</span>`
         : '';
 
       row.innerHTML = `
@@ -952,12 +1012,15 @@
           <span>${dateIcon} ${formatDate(dateValue)}</span>
         </div>
       `;
-      row.addEventListener('click', () => {
-        const targetPage = info.pages[0];
-        const url = new URL(location.href);
-        if (targetPage === 1) url.searchParams.delete('p');
-        else url.searchParams.set('p', String(targetPage));
-        location.href = url.toString();
+
+      // Target URL when clicked: open the file directly and jump to the matched line
+      const targetUrl = buildFileUrl(info.repo, info.filePath, info.lineStart, info.lineEnd);
+      row.title = targetUrl;
+
+      row.addEventListener('click', (ev) => {
+        // Allow the browser default behavior for Ctrl/Cmd/Shift/middle click (user may want a new tab)
+        if (ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.button === 1) return;
+        window.open(targetUrl, '_blank', 'noopener');
       });
       row.addEventListener('mouseenter', () => { row.style.background = 'var(--bgColor-muted,#f6f8fa)'; });
       row.addEventListener('mouseleave', () => { row.style.background = ''; });

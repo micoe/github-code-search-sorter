@@ -1,6 +1,6 @@
 # GitHub Code Search Star & Updated Sorter
 
-> A userscript (Tampermonkey / Violentmonkey) that enhances GitHub code search results by displaying each repository's **Star count**, **file last-commit date**, and **repo update date**, with dual-date sorting, default-order restore, and cross-page scan aggregation.
+> A userscript (Tampermonkey / Violentmonkey) that enhances GitHub code search results by displaying each repository's **Star count**, **file last-commit date**, and **repo update date**, with dual-date sorting, default-order restore, cross-page scan aggregation, and click-through to the matched file lines.
 
 [简体中文](./README.zh-CN.md) | English
 
@@ -10,7 +10,8 @@
 
 -  **Show Stars & Dual Dates** — Each code search result gets a badge with the repository's ⭐ Star count, 📄 file last-commit date, and 🕒 repository update date, fetched via the GitHub API.
 -  **In-page Sorting** — Sort current-page results by Stars, File date, or Repo date (click again to toggle ascending/descending); the badge switches to show the date being sorted. Restore the original order at any time.
--  **Cross-page Scan & Aggregate** — Scan multiple result pages at once, list every unique file (with its path, Stars, dates, and page number), deduplicate repositories, and sort by Stars / File date / Repo date.
+-  **Cross-page Scan & Aggregate** — Scan multiple result pages at once, list every unique file (with its path, line range, Stars, dates, and page number), deduplicate repositories, and sort by Stars / File date / Repo date.
+-  **Click to Jump to the Matched Lines** — Rows in the scan panel are clickable: they open the file on GitHub in a new tab and jump straight to the matched line range (e.g. `#L10-L20`).
 -  **GitHub Token Support** — Optionally set a Personal Access Token to raise the API rate limit from 60 to 5000 requests/hour.
 -  **Caching** — Repo and file-commit data is cached in `sessionStorage` (10-minute TTL) to reduce redundant API calls.
 
@@ -46,9 +47,9 @@
 Clicking **📊 Scan N Pages & Aggregate** opens a floating panel that:
 
 - Shows per-page statistics (result items, unique files, and unique repos).
-- Lists every unique **file** across the scanned pages, including its file path, repo name, page number, Stars, and date.
+- Lists every unique **file** across the scanned pages, including its file path, line range, repo name, page number, Stars, and date.
 - Supports sorting by ⭐ Stars, 📄 File Updated, or 🕒 Repo Updated (the displayed date follows the sort).
-- Click a row to jump to the first page it appears on.
+- Click a row to open that file on GitHub in a new tab and jump directly to the matched line range (e.g. ` : L10-L20`); Ctrl/Cmd/Shift/middle click keeps your browser's default behavior.
 - Supports **Rescan**. Closing the panel keeps it hidden until you scan again.
 
 ### Script menu commands
@@ -86,10 +87,11 @@ Use the menu command **📄 Set Scan Pages** to choose how many result pages are
 ## 🛠️ How it works
 
 1. On GitHub code search pages (`/search?type=code`), the script observes the results list.
-2. For each result item, it extracts the repository full name (`owner/repo`) and the matched file path.
+2. For each result item, it extracts the repository full name (`owner/repo`), the matched file path, and the line anchor (`#L10` / `#L10-L20`) when present.
 3. It calls `GET /repos/{owner}/{repo}` for Stars and repo update time, and `GET /repos/{owner}/{repo}/commits?path={file}` for the file's last-commit date.
 4. Results are rendered as an inline badge in each result's header bar.
 5. Sorting and scanning operate on the DOM elements; the original order is tracked via a `WeakMap` so it can be restored.
+6. Scan panel rows build a `https://github.com/{repo}/blob/HEAD/{path}#L{start}-L{end}` link so a click opens the exact matched lines.
 
 ### Technical notes
 
