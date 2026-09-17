@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         GitHub Code Search Star & Updated Sorter
 // @namespace    https://github.com/micoe
-// @version      1.3.0
+// @version      1.4.0
 // @icon         https://github.githubassets.com/favicons/favicon.svg
-// @description  Display repository Star count and file/repo update time in GitHub code search results, with dual-date sorting, default-order restore, cross-page scan aggregation, and click to jump to the matching file line.
+// @description  Display repository Star count and file/repo update time (rendered live as data arrives) in GitHub code search results, with dual-date sorting, default-order restore, cross-page scan aggregation, and click to jump to the matching file line.
 // @author       micoe
 // @match        https://github.com/search*
 // @grant        GM_xmlhttpRequest
@@ -294,7 +294,10 @@
   }
 
   // ========== Create Badge ==========
-  function createBadge(repoInfo, fileCommitDate) {
+  // The badge is attached immediately as a placeholder (⭐ … / 📄 … / 🕒 …) and
+  // filled in field by field as data arrives, so the user gets instant feedback
+  // instead of waiting for every request to finish.
+  function createBadge() {
     const badge = document.createElement('span');
     badge.className = 'ghcs-extra-info';
     badge.style.cssText = `
@@ -315,15 +318,20 @@
       white-space: nowrap;
       z-index: 10;
       pointer-events: auto;
+      opacity: 0.6;
     `;
-    const fileDateStr = fileCommitDate ? formatDate(fileCommitDate) : 'N/A';
-    const repoDateStr = formatDate(repoInfo.updated);
     badge.innerHTML = `
-      <span title="Star count">⭐ ${formatStars(repoInfo.stars)}</span>
-      <span class="ghcs-date-file" title="File last updated">📄 ${fileDateStr}</span>
-      <span class="ghcs-date-repo" title="Repository last updated" style="display:none;">🕒 ${repoDateStr}</span>
+      <span class="ghcs-stars" title="Star count">⭐ …</span>
+      <span class="ghcs-date-file" title="File last updated">📄 …</span>
+      <span class="ghcs-date-repo" title="Repository last updated" style="display:none;">🕒 …</span>
     `;
     return badge;
+  }
+
+  // Restore full opacity once both stars and file date are in
+  function refreshBadgePending(badge) {
+    badge.style.opacity =
+      badge.dataset.ghcsStars === '1' && badge.dataset.ghcsFile === '1' ? '' : '0.6';
   }
 
   // ========== headerBar Helpers ==========
@@ -336,13 +344,62 @@
     return null;
   }
 
-  function hasOwnBadge(el) {
+  function findBadge(el) {
     const hb = findOwnHeaderBar(el);
-    if (!hb) return false;
+    if (!hb) return null;
     for (const c of hb.children) {
-      if (c.classList && c.classList.contains('ghcs-extra-info')) return true;
+      if (c.classList && c.classList.contains('ghcs-extra-info')) return c;
     }
-    return false;
+    return null;
+  }
+
+  // Attach the placeholder badge right away (no waiting for data)
+  function ensureBadge(el) {
+    const headerBar = findOwnHeaderBar(el);
+    if (!headerBar) return null;
+
+    for (const c of headerBar.children) {
+      if (c.classList && c.classList.contains('ghcs-extra-info')) return c;
+    }
+
+    const pos = getComputedStyle(headerBar).position;
+    if (pos === 'static') {
+      headerBar.style.setProperty('position', 'relative', 'important');
+    }
+
+    if (!headerBar.dataset.ghcsPadded) {
+      const curPr = parseInt(getComputedStyle(headerBar).paddingRight, 10) || 0;
+      if (curPr < 160) {
+        headerBar.style.setProperty('padding-right', '160px', 'important');
+      }
+      headerBar.dataset.ghcsPadded = '1';
+    }
+
+    const badge = createBadge();
+    headerBar.appendChild(badge);
+    return badge;
+  }
+
+  // Fill in Star count and repo update time
+  function setBadgeRepoInfo(el, info) {
+    const badge = findBadge(el);
+    if (!badge) return;
+    const starsEl = badge.querySelector('.ghcs-stars');
+    const repoDateEl = badge.querySelector('.ghcs-date-repo');
+    if (starsEl) starsEl.textContent = '⭐ ' + formatStars(info ? info.stars : null);
+    if (repoDateEl) repoDateEl.textContent = '🕒 ' + formatDate(info ? info.updated : null);
+    badge.dataset.ghcsStars = '1';
+    refreshBadgePending(badge);
+  }
+
+  // Fill in the file's last-commit date
+  function setBadgeFileDate(el, date) {
+    const badge = findBadge(el);
+    if (!badge) return;
+    const fileEl = badge.querySelector('.ghcs-date-file');
+    if (fileEl) fileEl.textContent = '📄 ' + (date ? formatDate(date) : 'N/A');
+    badge.dataset.ghcsFile = '1';
+    refreshBadgePending(badge);
   }
 
   function readOwnBadge(el) {
@@ -361,7 +418,13 @@
         if (rm) repoDate = new Date(rm[1]).getTime() || 0;
         const fm = text.match(/📄\s*([\d-]+)/);
         if (fm) fileDate = new Date(fm[1]).getTime() || 0;
-        return { stars, repoDate, fileDate };
+        return {
+          stars,
+          repoDate,
+          fileDate,
+          starsReady: c.dataset.ghcsStars === '1',
+          fileReady: c.dataset.ghcsFile === '1',
+        };
       }
     }
     return null;
@@ -407,86 +470,160 @@
     });
   }
 
-  // ========== Batch Fetch & Update UI ==========
+  // ========== Concurrency Pool & Failure Backoff ==========
+  // Keep concurrency limited (to stay under the rate limit) while invoking a
+  // callback as soon as each task settles, so the UI can update live.
+  function runPool(items, limit, worker, onProgress) {
+    return new Promise((resolve) => {
+      const total = items.length;
+      if (total === 0) return resolve();
+
+      let next = 0;
+      let done = 0;
+      let active = 0;
+
+      const launch = () => {
+        while (active < limit && next < total) {
+          const item = items[next++];
+          active++;
+          Promise.resolve()
+            .then(() => worker(item))
+            .catch((e) => console.warn('[ghcs] task failed:', e))
+            .then(() => {
+              active--;
+              done++;
+              if (onProgress) {
+                try { onProgress(done, total); } catch (e) {}
+              }
+              if (done === total) resolve();
+              else launch();
+            });
+        }
+      };
+
+      launch();
+    });
+  }
+
+  // Retry backoff for failures / rate limiting, so the MutationObserver
+  // does not repeatedly re-trigger the same failing requests.
+  const FAIL_BACKOFF_MS = 60 * 1000;
+  const failedRepoAt = new Map();
+  const failedFileAt = new Map();
+  const inFlightRepos = new Set();
+  const inFlightFiles = new Set();
+
+  function inBackoff(map, key) {
+    const t = map.get(key);
+    return t != null && Date.now() - t < FAIL_BACKOFF_MS;
+  }
+
+  // ========== Incremental Fetch & Live UI Updates ==========
+  let dataVersion = 0;        // bumped whenever badge data/DOM changes
+  let lastSortedVersion = -1; // version at the last sort (prevents sort self-loop)
+  let annotateRunning = false;
+  let annotateAgain = false;
+  let resortTimer = null;
+  let resortPending = false;
+
+  // Throttled re-sort: at most once per 500ms while data keeps arriving
+  function scheduleResort() {
+    if (resortTimer) { resortPending = true; return; }
+    resortTimer = setTimeout(() => {
+      resortTimer = null;
+      if (currentSort && dataVersion !== lastSortedVersion) applySort();
+      if (resortPending) { resortPending = false; scheduleResort(); }
+    }, 500);
+  }
+
   async function annotateResults() {
-    const resultItems = document.querySelectorAll('div[class*="codeResultWrapper"]');
-    if (resultItems.length === 0) return;
-
-    const repoMap = new Map();
-    const fileQuerySet = new Set();
-
-    resultItems.forEach((item) => {
-      const repoFullName = extractRepoFullName(item);
-      if (!repoFullName) return;
-      const filePath = extractFilePath(item);
-      if (!repoMap.has(repoFullName)) repoMap.set(repoFullName, []);
-      repoMap.get(repoFullName).push({ el: item, repoFullName, filePath });
-      if (filePath) fileQuerySet.add(repoFullName + '\u0000' + filePath);
-    });
-
-    if (repoMap.size === 0) return;
-
-    const repos = Array.from(repoMap.keys());
-    const fileQueries = Array.from(fileQuerySet).map((k) => {
-      const idx = k.indexOf('\u0000');
-      return { repo: k.slice(0, idx), filePath: k.slice(idx + 1) };
-    });
-
-    const repoInfoMap = new Map();
-    for (let i = 0; i < repos.length; i += CONFIG.batchSize) {
-      const batch = repos.slice(i, i + CONFIG.batchSize);
-      const results = await Promise.all(batch.map((r) => fetchRepoInfo(r)));
-      batch.forEach((repo, idx) => repoInfoMap.set(repo, results[idx]));
+    if (annotateRunning) { annotateAgain = true; return; }
+    annotateRunning = true;
+    try {
+      do {
+        annotateAgain = false;
+        await annotateOnce();
+      } while (annotateAgain);
+    } finally {
+      annotateRunning = false;
     }
+  }
 
-    const fileDateMap = new Map();
-    for (let i = 0; i < fileQueries.length; i += CONFIG.batchSize) {
-      const batch = fileQueries.slice(i, i + CONFIG.batchSize);
-      const results = await Promise.all(
-        batch.map((q) => fetchFileLastCommit(q.repo, q.filePath))
-      );
-      batch.forEach((q, idx) => {
-        fileDateMap.set(q.repo + '\u0000' + q.filePath, results[idx]);
-      });
-    }
+  async function annotateOnce() {
+    const items = Array.from(document.querySelectorAll('div[class*="codeResultWrapper"]'));
+    if (items.length === 0) return;
 
-    repoMap.forEach((entries, repo) => {
-      const info = repoInfoMap.get(repo);
-      if (!info) return;
-      entries.forEach(({ el, filePath }) => {
-        if (hasOwnBadge(el)) return;
-        const headerBar = findOwnHeaderBar(el);
-        if (!headerBar) return;
+    const repoEls = new Map(); // repo -> [el]
+    const fileEls = new Map(); // repo\0path -> { repo, filePath, els }
 
-        const pos = getComputedStyle(headerBar).position;
-        if (pos === 'static') {
-          headerBar.style.setProperty('position', 'relative', 'important');
-        }
+    items.forEach((el) => {
+      const repo = extractRepoFullName(el);
+      if (!repo) return;
 
-        if (!headerBar.dataset.ghcsPadded) {
-          const curPr = parseInt(getComputedStyle(headerBar).paddingRight, 10) || 0;
-          if (curPr < 160) {
-            headerBar.style.setProperty('padding-right', '160px', 'important');
-          }
-          headerBar.dataset.ghcsPadded = '1';
-        }
+      const existed = !!findBadge(el);
+      const badge = ensureBadge(el); // attach the placeholder immediately
+      if (!badge) return;
+      if (!existed) dataVersion++;
 
-        const fileCommitDate = filePath
-          ? fileDateMap.get(repo + '\u0000' + filePath)
-          : null;
-        const badge = createBadge(info, fileCommitDate);
-        headerBar.appendChild(badge);
-      });
+      if (badge.dataset.ghcsStars !== '1') {
+        if (!repoEls.has(repo)) repoEls.set(repo, []);
+        repoEls.get(repo).push(el);
+      }
+
+      const filePath = extractFilePath(el);
+      if (!filePath) {
+        // No file path (e.g. only the repo matched) -> mark as done right away
+        if (badge.dataset.ghcsFile !== '1') { setBadgeFileDate(el, null); dataVersion++; }
+        return;
+      }
+
+      if (badge.dataset.ghcsFile !== '1') {
+        const key = repo + '\u0000' + filePath;
+        if (!fileEls.has(key)) fileEls.set(key, { repo, filePath, els: [] });
+        fileEls.get(key).els.push(el);
+      }
     });
 
+    // Buttons and date-mode switching do not depend on data — set them up now
     ensureOriginalCaptured();
     addSortButtons();
+    updateBadgeDateDisplay(currentSort === 'repoDate' ? 'repoDate' : 'fileDate');
 
-    if (currentSort === 'repoDate') {
-      updateBadgeDateDisplay('repoDate');
-    } else {
-      updateBadgeDateDisplay('fileDate');
-    }
+    const tasks = [];
+
+    // Repo tasks are queued first so Stars show up first
+    repoEls.forEach((els, repo) => {
+      if (inFlightRepos.has(repo) || inBackoff(failedRepoAt, repo)) return;
+      inFlightRepos.add(repo);
+      tasks.push(async () => {
+        const info = await fetchRepoInfo(repo);
+        inFlightRepos.delete(repo);
+        if (info.stars == null) failedRepoAt.set(repo, Date.now());
+        else failedRepoAt.delete(repo);
+        els.forEach((el) => setBadgeRepoInfo(el, info));
+        dataVersion++;
+        scheduleResort();
+      });
+    });
+
+    fileEls.forEach((task, key) => {
+      if (inFlightFiles.has(key) || inBackoff(failedFileAt, key)) return;
+      inFlightFiles.add(key);
+      tasks.push(async () => {
+        const date = await fetchFileLastCommit(task.repo, task.filePath);
+        inFlightFiles.delete(key);
+        if (!date) failedFileAt.set(key, Date.now());
+        else failedFileAt.delete(key);
+        task.els.forEach((el) => setBadgeFileDate(el, date));
+        dataVersion++;
+        scheduleResort();
+      });
+    });
+
+    if (tasks.length === 0) return;
+
+    // Single pool: repo and file tasks run together, each refresh lands immediately
+    await runPool(tasks, CONFIG.batchSize, (fn) => fn());
   }
 
   // ========== In-page Sorting ==========
@@ -588,7 +725,15 @@
 
     if (withKeys.length === 0) return;
 
+    // Is the current sort field still loading? (Stars and repo date come from the same repo request)
+    const isPending = (o) => (currentSort === 'fileDate' ? !o.fileReady : !o.starsReady);
+
     withKeys.sort((a, b) => {
+      // Items still loading always go last to avoid jumping around mid-sort
+      const pa = isPending(a);
+      const pb = isPending(b);
+      if (pa !== pb) return pa ? 1 : -1;
+
       let va, vb;
       if (currentSort === 'stars') { va = a.stars; vb = b.stars; }
       else if (currentSort === 'fileDate') { va = a.fileDate; vb = b.fileDate; }
@@ -598,6 +743,8 @@
     });
 
     withKeys.forEach(({ el }) => list.appendChild(el));
+
+    lastSortedVersion = dataVersion;
   }
 
   function restoreDefaultOrder() {
@@ -634,10 +781,31 @@
   // ========== Cross-page Scanning ==========
   let isScanning = false;
   let scanPanelData = [];
+  let scanPanelStats = [];
   // Default sort: file update time; panel shows file date by default
   let scanPanelSort = { field: 'fileUpdated', asc: false };
   // Whether the user manually closed the panel (avoid re-opening it on auto refresh)
   let scanPanelUserClosed = false;
+
+  // Throttled panel re-render: at most once per 500ms while data keeps arriving
+  let scanRerenderTimer = null;
+  let scanRerenderPending = false;
+
+  function rerenderScanPanel() {
+    if (!scanPanelData.length) return;
+    const panel = showScanPanel();
+    renderScanPanelResults(scanPanelData, scanPanelStats, { keepProgress: isScanning });
+    return panel;
+  }
+
+  function scheduleScanRerender() {
+    if (scanRerenderTimer) { scanRerenderPending = true; return; }
+    scanRerenderTimer = setTimeout(() => {
+      scanRerenderTimer = null;
+      rerenderScanPanel();
+      if (scanRerenderPending) { scanRerenderPending = false; scheduleScanRerender(); }
+    }, 500);
+  }
 
   function fetchPageHtml(url) {
     return new Promise((resolve, reject) => {
@@ -707,6 +875,8 @@
       }
     }
 
+    resetScanPanelForNewScan();
+
     try {
       // key: repo\u0000path\u0000lineStart\u0000lineEnd  ->  Set(pages)
       const fileToPages = new Map();
@@ -748,21 +918,7 @@
         return;
       }
 
-      // Repo info: 30-50%
-      const repoList = Array.from(allRepos);
-      const repoInfoMap = new Map();
-      for (let i = 0; i < repoList.length; i += CONFIG.batchSize) {
-        const batch = repoList.slice(i, i + CONFIG.batchSize);
-        const results = await Promise.all(batch.map((r) => fetchRepoInfo(r)));
-        batch.forEach((repo, idx) => repoInfoMap.set(repo, results[idx]));
-        const progress = 30 + ((i + batch.length) / repoList.length) * 20;
-        renderScanPanelProgress(
-          'Fetching repo info ' + (i + batch.length) + ' / ' + repoList.length + '…',
-          progress
-        );
-      }
-
-      // File commit dates: 50-100%
+      // Render every file as a placeholder first (no Stars/dates yet), then fill in
       const fileEntries = Array.from(fileToPages.keys()).map((k) => {
         const parts = k.split('\u0000');
         return {
@@ -775,38 +931,70 @@
       });
       const fileEntriesWithPath = fileEntries.filter((e) => e.filePath);
 
-      const fileDateMap = new Map();
-      for (let i = 0; i < fileEntriesWithPath.length; i += CONFIG.batchSize) {
-        const batch = fileEntriesWithPath.slice(i, i + CONFIG.batchSize);
-        const results = await Promise.all(
-          batch.map((e) => fetchFileLastCommit(e.repo, e.filePath))
-        );
-        batch.forEach((e, idx) => fileDateMap.set(e.key, results[idx]));
-        const progress = 50 + ((i + batch.length) / fileEntriesWithPath.length) * 50;
-        renderScanPanelProgress(
-          'Fetching file update dates ' + (i + batch.length) + ' / ' + fileEntriesWithPath.length + '…',
-          progress
-        );
-      }
+      const infos = fileEntries.map((e) => ({
+        repo: e.repo,
+        filePath: e.filePath,
+        lineStart: e.lineStart,
+        lineEnd: e.lineEnd,
+        stars: undefined,        // undefined = loading, null = failed / no data
+        repoUpdated: undefined,
+        fileUpdated: e.filePath ? undefined : null,
+        pages: Array.from(fileToPages.get(e.key)).sort((a, b) => a - b),
+      }));
 
-      // Merge
-      const infos = fileEntries.map((e) => {
-        const repoInfo = repoInfoMap.get(e.repo) || {};
-        return {
-          repo: e.repo,
-          filePath: e.filePath,
-          lineStart: e.lineStart,
-          lineEnd: e.lineEnd,
-          stars: repoInfo.stars != null ? repoInfo.stars : null,
-          repoUpdated: repoInfo.updated || null,
-          fileUpdated: e.filePath ? (fileDateMap.get(e.key) || null) : null,
-          pages: Array.from(fileToPages.get(e.key)).sort((a, b) => a - b),
-        };
+      const infoByKey = new Map();
+      const infosByRepo = new Map();
+      fileEntries.forEach((e, i) => {
+        infoByKey.set(e.key, infos[i]);
+        if (!infosByRepo.has(e.repo)) infosByRepo.set(e.repo, []);
+        infosByRepo.get(e.repo).push(infos[i]);
       });
 
-      renderScanPanelResults(infos, pageStats);
+      renderScanPanelResults(infos, pageStats, { keepProgress: true });
+
+      // Repo info + file commit dates: one pool, 30-100%, panel refreshes per task
+      const repoList = Array.from(allRepos);
+      const totalTasks = repoList.length + fileEntriesWithPath.length;
+      let doneTasks = 0;
+      const tick = () => {
+        doneTasks++;
+        renderScanPanelProgress(
+          'Fetching Stars & dates ' + doneTasks + ' / ' + totalTasks + '…',
+          30 + (totalTasks ? (doneTasks / totalTasks) * 70 : 70)
+        );
+        scheduleScanRerender();
+      };
+
+      const tasks = repoList.map((repo) => async () => {
+        const info = await fetchRepoInfo(repo);
+        (infosByRepo.get(repo) || []).forEach((row) => {
+          row.stars = info.stars != null ? info.stars : null;
+          row.repoUpdated = info.updated || null;
+        });
+        tick();
+      });
+
+      fileEntriesWithPath.forEach((e) => {
+        tasks.push(async () => {
+          const date = await fetchFileLastCommit(e.repo, e.filePath);
+          const row = infoByKey.get(e.key);
+          if (row) row.fileUpdated = date || null;
+          tick();
+        });
+      });
+
+      await runPool(tasks, CONFIG.batchSize, (fn) => fn());
+
+      // All done: stop throttled re-rendering and do a final render
+      clearTimeout(scanRerenderTimer);
+      scanRerenderTimer = null;
+      scanRerenderPending = false;
+      renderScanPanelResults(infos, pageStats, { keepProgress: false });
     } catch (e) {
       console.error(e);
+      clearTimeout(scanRerenderTimer);
+      scanRerenderTimer = null;
+      scanRerenderPending = false;
       renderScanPanelError('Scan failed: ' + e.message);
     } finally {
       isScanning = false;
@@ -876,17 +1064,17 @@
     panel.querySelector('.ghcs-sp-sort-stars').addEventListener('click', () => {
       if (scanPanelSort.field === 'stars') scanPanelSort.asc = !scanPanelSort.asc;
       else { scanPanelSort.field = 'stars'; scanPanelSort.asc = false; }
-      renderScanPanelResults(scanPanelData, panel._stats);
+      rerenderScanPanel();
     });
     panel.querySelector('.ghcs-sp-sort-file').addEventListener('click', () => {
       if (scanPanelSort.field === 'fileUpdated') scanPanelSort.asc = !scanPanelSort.asc;
       else { scanPanelSort.field = 'fileUpdated'; scanPanelSort.asc = false; }
-      renderScanPanelResults(scanPanelData, panel._stats);
+      rerenderScanPanel();
     });
     panel.querySelector('.ghcs-sp-sort-repo').addEventListener('click', () => {
       if (scanPanelSort.field === 'repoUpdated') scanPanelSort.asc = !scanPanelSort.asc;
       else { scanPanelSort.field = 'repoUpdated'; scanPanelSort.asc = false; }
-      renderScanPanelResults(scanPanelData, panel._stats);
+      rerenderScanPanel();
     });
     panel.querySelector('.ghcs-sp-rescan').addEventListener('click', () => {
       scanAllPages();
@@ -895,15 +1083,25 @@
     return panel;
   }
 
+  // Clear the panel before a new scan starts (keeps the shell and toolbar)
+  function resetScanPanelForNewScan() {
+    const panel = showScanPanel(true);
+    panel.querySelector('.ghcs-sp-list').innerHTML = '';
+    panel.querySelector('.ghcs-sp-stats').style.display = 'none';
+    panel.querySelector('.ghcs-sp-stats').innerHTML = '';
+    panel.querySelector('.ghcs-sp-progress').style.display = 'block';
+    panel.querySelector('.ghcs-sp-progress-text').textContent = '';
+    panel.querySelector('.ghcs-sp-progress-bar').style.width = '0%';
+    panel.querySelector('.ghcs-sp-header span').textContent = '📊 Scan Results';
+    scanPanelData = [];
+    scanPanelStats = [];
+  }
+
   function renderScanPanelProgress(text, percent) {
     const panel = showScanPanel();
-    const prog = panel.querySelector('.ghcs-sp-progress');
-    prog.style.display = 'block';
+    panel.querySelector('.ghcs-sp-progress').style.display = 'block';
     panel.querySelector('.ghcs-sp-progress-text').textContent = text;
     panel.querySelector('.ghcs-sp-progress-bar').style.width = Math.min(100, percent) + '%';
-    const list = panel.querySelector('.ghcs-sp-list');
-    if (list.childElementCount > 0) list.innerHTML = '';
-    panel.querySelector('.ghcs-sp-stats').style.display = 'none';
   }
 
   function renderScanPanelError(msg) {
@@ -931,11 +1129,27 @@
     return url;
   }
 
-  function renderScanPanelResults(infos, stats) {
+  // Sort key: null means the field is still loading (sorted to the end)
+  function scanSortValue(info, field) {
+    if (field === 'stars') {
+      if (info.stars === undefined) return null;
+      return info.stars == null ? 0 : info.stars;
+    }
+    if (field === 'repoUpdated') {
+      if (info.repoUpdated === undefined) return null;
+      return info.repoUpdated ? new Date(info.repoUpdated).getTime() : 0;
+    }
+    if (info.fileUpdated === undefined) return null;
+    return info.fileUpdated ? new Date(info.fileUpdated).getTime() : 0;
+  }
+
+  function renderScanPanelResults(infos, stats, opts) {
+    const keepProgress = !!(opts && opts.keepProgress);
     scanPanelData = infos;
+    scanPanelStats = stats || [];
     const panel = showScanPanel();
-    panel._stats = stats;
-    panel.querySelector('.ghcs-sp-progress').style.display = 'none';
+    panel._stats = scanPanelStats;
+    if (!keepProgress) panel.querySelector('.ghcs-sp-progress').style.display = 'none';
 
     // ---- Stats ----
     const statsEl = panel.querySelector('.ghcs-sp-stats');
@@ -961,16 +1175,12 @@
     const showRepoDate = scanPanelSort.field === 'repoUpdated';
 
     const sorted = [...infos].sort((a, b) => {
-      let va, vb;
-      if (scanPanelSort.field === 'stars') {
-        va = a.stars || 0; vb = b.stars || 0;
-      } else if (scanPanelSort.field === 'repoUpdated') {
-        va = a.repoUpdated ? new Date(a.repoUpdated).getTime() : 0;
-        vb = b.repoUpdated ? new Date(b.repoUpdated).getTime() : 0;
-      } else {
-        va = a.fileUpdated ? new Date(a.fileUpdated).getTime() : 0;
-        vb = b.fileUpdated ? new Date(b.fileUpdated).getTime() : 0;
-      }
+      const va = scanSortValue(a, scanPanelSort.field);
+      const vb = scanSortValue(b, scanPanelSort.field);
+      // Items still loading always go last
+      if (va === null && vb === null) return 0;
+      if (va === null) return 1;
+      if (vb === null) return -1;
       return scanPanelSort.asc ? va - vb : vb - va;
     });
 
@@ -985,6 +1195,9 @@
       const pagesText = info.pages.map((p) => 'P.' + p).join(' / ');
       const dateIcon = showRepoDate ? '🕒' : '📄';
       const dateValue = showRepoDate ? info.repoUpdated : info.fileUpdated;
+      // undefined = loading (shows …); null = no data (shows N/A)
+      const starsText = info.stars === undefined ? '…' : formatStars(info.stars);
+      const dateText = dateValue === undefined ? '…' : formatDate(dateValue);
 
       const safeRepo = escapeHtml(info.repo);
       const safePath = escapeHtml(info.filePath || '');
@@ -1008,8 +1221,8 @@
         </div>
         ${pathHtml}
         <div style="display:flex;gap:12px;font-size:12px;color:var(--fgColor-muted,#57606a);">
-          <span>⭐ ${formatStars(info.stars)}</span>
-          <span>${dateIcon} ${formatDate(dateValue)}</span>
+          <span>⭐ ${starsText}</span>
+          <span>${dateIcon} ${dateText}</span>
         </div>
       `;
 
@@ -1042,7 +1255,8 @@
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
         annotateResults();
-        if (currentSort) applySort();
+        // Only re-sort when data/badges actually changed (avoids a sort loop)
+        if (currentSort && dataVersion !== lastSortedVersion) applySort();
       }, 800);
     });
     observer.observe(document.body, { childList: true, subtree: true });
