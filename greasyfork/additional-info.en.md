@@ -27,7 +27,7 @@ Available in your userscript manager's script menu:
 | 🗑️ Clear GitHub Token | Remove the saved Token |
 | ℹ️ View Token Status | Show whether a Token is set and the current rate limit |
 | 📄 Set Scan Pages | Set how many result pages to scan (1–20, default 3) |
-| 🌐 UI Language | Set the UI language: `zh` / `en` / `auto` (follow browser by default) |
+| 🌐 UI Language | Switch the UI language: Auto / 中文 / English; ✓ marks the active one |
 
 ## ⚠️ Notes
 

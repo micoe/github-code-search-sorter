@@ -34,7 +34,7 @@
    - **Direct from GitHub** — [Install `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
 3. Visit `https://github.com/search?type=code` and run a code search.
 
-> **🌐 Language**: There is a single script file. The UI language **follows your browser language automatically** (`zh*` → Chinese, otherwise English), and you can override it any time via the script menu command **🌐 UI Language** (`zh` / `en` / `auto`).
+> **🌐 Language**: There is a single script file. The UI language **follows your browser language automatically** (`zh*` → Chinese, otherwise English), and you can switch it any time via the **🌐 UI Language** menu options (Auto / 中文 / English, with ✓ marking the active one).
 >
 > **⬆️ Upgrading from an older version**: if you previously installed the separate English file `script.en.user.js`, please uninstall it and install the script above instead (that file is no longer maintained).
 
@@ -74,7 +74,7 @@ In your userscript manager's script menu (Tampermonkey or Violentmonkey), the fo
 | 🗑️ Clear GitHub Token | Remove the saved Token. |
 | ℹ️ View Token Status | Show whether a Token is set and the current API rate limit. |
 | 📄 Set Scan Pages | Set how many pages to scan (1–20, default 3). |
-| 🌐 UI Language | Set the UI language: `zh` (Chinese) / `en` (English) / `auto` (follow browser, default). |
+| 🌐 UI Language | Three menu options: Auto (follow browser) / 中文 / English; ✓ marks the active one, click to switch. |
 
 ---
 

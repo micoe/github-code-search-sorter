@@ -3,7 +3,7 @@
 // @name:zh-CN   GitHub 代码搜索 Star & 更新时间排序助手
 // @name:en      GitHub Code Search Star & Updated Sorter
 // @namespace    https://github.com/micoe
-// @version      2.0.2
+// @version      2.0.3
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @description  在 GitHub 代码搜索结果中显示仓库 Star 数和文件/仓库更新时间（数据到达即实时渲染），支持双日期排序、恢复默认、跨页扫描汇总，点击可跳转到对应文件行
 // @description:zh-CN  在 GitHub 代码搜索结果中显示仓库 Star 数和文件/仓库更新时间（数据到达即实时渲染），支持双日期排序、恢复默认、跨页扫描汇总，点击可跳转到对应文件行
@@ -44,12 +44,13 @@
 
   const I18N = {
     zh: {
-      langAutoSuffix: '（自动）',
       menuSetToken: '⚙️ 设置 GitHub Token',
       menuClearToken: '🗑️ 清除 GitHub Token',
       menuTokenStatus: 'ℹ️ 查看 Token 状态',
       menuScanPages: '📄 设置扫描页数',
-      menuLangLabel: (label) => '🌐 界面语言：' + label,
+      menuLangAuto: '🌐 界面语言：自动（跟随浏览器）',
+      menuLangZh: '🌐 界面语言：中文',
+      menuLangEn: '🌐 界面语言：English',
       tokenPrompt: '请输入 GitHub Personal Access Token（仅需 public_repo 权限）：',
       tokenClearConfirm: '确定要清除已保存的 GitHub Token 吗？',
       tokenStatusSet: (prefix) => '已设置 Token：' + prefix + '...\nAPI 速率限制：5000 次/小时',
@@ -57,8 +58,6 @@
       scanPagesPrompt: (cur) => '扫描前几页？（1-20，当前 ' + cur + '）',
       scanPagesSet: (n) => '已设置为扫描前 ' + n + ' 页',
       scanPagesInvalid: '请输入 1-20 之间的整数',
-      langPrompt: (cur) => '输入语言 / Enter language：zh、en 或 auto（跟随浏览器）\n当前：' + cur,
-      langInvalid: '请输入 zh、en 或 auto',
       badgeStarsTitle: 'Star 数',
       badgeFileTitle: '文件最后更新',
       badgeRepoTitle: '仓库最后更新',
@@ -90,12 +89,13 @@
       scanFailed: (msg) => '扫描失败：' + msg,
     },
     en: {
-      langAutoSuffix: ' (auto)',
       menuSetToken: '⚙️ Set GitHub Token',
       menuClearToken: '🗑️ Clear GitHub Token',
       menuTokenStatus: 'ℹ️ View Token Status',
       menuScanPages: '📄 Set Scan Pages',
-      menuLangLabel: (label) => '🌐 UI Language: ' + label,
+      menuLangAuto: '🌐 UI Language: Auto (follow browser)',
+      menuLangZh: '🌐 UI Language: 中文',
+      menuLangEn: '🌐 UI Language: English',
       tokenPrompt: 'Enter your GitHub Personal Access Token (public_repo scope only):',
       tokenClearConfirm: 'Are you sure you want to clear the saved GitHub Token?',
       tokenStatusSet: (prefix) => 'Token set: ' + prefix + '...\nAPI rate limit: 5000 requests/hour',
@@ -103,8 +103,6 @@
       scanPagesPrompt: (cur) => 'How many pages to scan? (1-20, current ' + cur + ')',
       scanPagesSet: (n) => 'Set to scan the first ' + n + ' pages',
       scanPagesInvalid: 'Please enter an integer between 1 and 20',
-      langPrompt: (cur) => 'Enter language: zh, en, or auto (follow browser)\nCurrent: ' + cur,
-      langInvalid: 'Please enter zh, en or auto',
       badgeStarsTitle: 'Star count',
       badgeFileTitle: 'File last updated',
       badgeRepoTitle: 'Repository last updated',
@@ -142,12 +140,6 @@
     const v = table[key];
     if (typeof v === 'function') return v(...args);
     return v != null ? v : key;
-  }
-
-  // 当前语言标签（未手动指定时标注"自动"）
-  function langLabel() {
-    const base = LANG === 'zh' ? '中文' : 'English';
-    return LANG_OVERRIDE ? base : base + t('langAutoSuffix');
   }
 
   // ========== Token 管理 ==========
@@ -208,20 +200,22 @@
     }
   });
 
-  GM_registerMenuCommand(t('menuLangLabel', langLabel()), () => {
-    const cur = LANG_OVERRIDE || 'auto';
-    const input = prompt(t('langPrompt', cur), cur);
-    if (input === null) return;
-    const v = input.trim().toLowerCase();
-    if (v === 'auto' || v === '') {
-      GM_setValue(LANG_KEY, '');
+  // ========== 界面语言选项 ==========
+  // 以菜单选项形式提供（而不是让用户输入语言代码），✓ 标记当前生效项。
+  // value 为空字符串表示「自动」，即跟随浏览器语言。
+  const LANG_OPTIONS = [
+    { value: '', label: 'menuLangAuto' },
+    { value: 'zh', label: 'menuLangZh' },
+    { value: 'en', label: 'menuLangEn' },
+  ];
+
+  LANG_OPTIONS.forEach((opt) => {
+    const isCurrent = (LANG_OVERRIDE || '') === opt.value;
+    GM_registerMenuCommand((isCurrent ? '✓ ' : '') + t(opt.label), () => {
+      if ((LANG_OVERRIDE || '') === opt.value) return; // 已是当前语言，无需切换
+      GM_setValue(LANG_KEY, opt.value);
       location.reload();
-    } else if (v === 'zh' || v === 'en') {
-      GM_setValue(LANG_KEY, v);
-      location.reload();
-    } else {
-      alert(t('langInvalid'));
-    }
+    });
   });
 
   // ========== 配置 ==========

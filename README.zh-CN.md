@@ -34,7 +34,7 @@
    - **GitHub 直装** — [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
 3. 访问 `https://github.com/search?type=code` 并进行代码搜索。
 
-> **🌐 语言说明**：脚本只有一个文件，界面语言**自动跟随浏览器语言**（`zh*` → 中文，其余 → 英文），也可随时通过脚本菜单命令 **🌐 界面语言** 手动指定为 `zh` / `en` / `auto`。
+> **🌐 语言说明**：脚本只有一个文件，界面语言**自动跟随浏览器语言**（`zh*` → 中文，其余 → 英文），也可随时通过脚本菜单里的 **🌐 界面语言** 选项切换（自动 / 中文 / English，当前生效项带 ✓ 标记）。
 >
 > **⬆️ 从旧版升级**：如果你之前安装的是独立的英文版 `script.en.user.js`，请卸载它，改装上面的脚本（该文件已不再维护）。
 
@@ -74,7 +74,7 @@
 | 🗑️ 清除 GitHub Token | 清除已保存的 Token。 |
 | ℹ️ 查看 Token 状态 | 显示是否已设置 Token 以及当前 API 速率限制。 |
 | 📄 设置扫描页数 | 设置扫描的结果页数（1-20，默认 3）。 |
-| 🌐 界面语言 | 指定界面语言：`zh`（中文）/ `en`（English）/ `auto`（跟随浏览器，默认）。 |
+| 🌐 界面语言 | 三个菜单选项：自动（跟随浏览器）/ 中文 / English，✓ 标记当前生效项，点击即切换。 |
 
 ---
 
