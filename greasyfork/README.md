@@ -81,3 +81,33 @@ https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/mai
 - **GF 会覆盖 `@updateURL` / `@downloadURL`**，指向它自己托管的副本。因此从 GF 安装的用户只能从 GF 更新——这正是必须配置同步的原因。从 GitHub raw 直接安装的用户仍走脚本里的 `@updateURL`，两条路互不影响。
 - 本目录的 `.md` 文件不会被 GF 当成脚本导入（GF 只导入 `*.user.js`），可放心放在仓库里。
 - 不要为了「让英文用户搜到」而再发一个英文条目——本地化元数据已经覆盖了这个需求。
+
+---
+
+## 6. 提高曝光（合规做法）
+
+**① 给 GitHub 仓库加 Topics** — 仓库首页 → About 右侧 ⚙️ → Topics。建议：
+
+```
+userscript  tampermonkey  violentmonkey  greasemonkey  userscript-manager
+github  github-search  code-search
+```
+
+**② 打一个 Release** — 把 `v2.0.2` 作为首个 Release 发布，仓库时间线更清晰，也方便别人引用具体版本。
+
+**③ README 徽章** — 两个 README 顶部已加 Greasy Fork 的**安装 / 版本 / 安装量**徽章。版本徽章是动态的（`img.shields.io/greasyfork/v/595545`），发版后自动跟随，无需手工维护；安装量徽章会随时间自然增长，是最直接的社会证明。
+
+**④ 去「有人正在问这个需求」的地方回答，而不是到处贴链接**
+
+- GitHub 上关于 code search 排序/筛选的 Discussions、Issue —— 有人在问「怎么按 Star 排序搜索结果」时给出方案，并说明脚本做了什么
+- `awesome-userscripts` 之类的精选列表 —— 用 PR 提交，维护者会按收录标准审核
+- 中文社区（V2EX、少数派、即刻等）的油猴 / 效率工具话题 —— 讲清楚解决了什么痛点
+
+**避免**：在无关仓库刷评论、给 Issue 发无上下文的推广链接。容易被举报，GitHub 与 GF 都可能因此限制账号。
+
+**一段可直接取用的介绍**（按场合裁剪长度）：
+
+> GitHub 的代码搜索只能按相关性排，看不出哪个仓库更值得看。这个脚本在每条结果上显示仓库 Star 数、匹配文件的最后提交日期和仓库更新时间，并支持按它们排序、跨页扫描汇总、点击直达匹配行。中英双语，Token 可选（设置后 API 额度从 60 次/小时提升到 5000 次/小时）。
+
+**关于数据**：脚本目前总安装量 3（2026-09-17）。这类垂直工具的曝光主要靠「需求出现时被搜到 / 被推荐」，不用着急，先把 README 与脚本页信息做扎实。
+

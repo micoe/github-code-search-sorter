@@ -1,5 +1,10 @@
 # GitHub 代码搜索 Star 与更新时间排序助手
 
+[![Greasy Fork](https://img.shields.io/badge/Greasy%20Fork-install-670000)](https://greasyfork.org/zh-CN/scripts/595545)
+[![version](https://img.shields.io/greasyfork/v/595545?label=version)](https://greasyfork.org/zh-CN/scripts/595545)
+[![installs](https://img.shields.io/greasyfork/dt/595545?label=installs)](https://greasyfork.org/zh-CN/scripts/595545)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 > 一个适用于 Tampermonkey（油猴）/ Violentmonkey（暴力猴）的用户脚本，为 GitHub 代码搜索结果显示仓库的 **Star 数**、**文件最后提交日期** 与 **仓库更新日期**，支持双日期排序、恢复默认排序、跨页扫描汇总，并可直接点击跳转到匹配文件行。
 
 简体中文 | [English](./README.md)

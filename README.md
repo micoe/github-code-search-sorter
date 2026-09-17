@@ -1,5 +1,10 @@
 # GitHub Code Search Star & Updated Sorter
 
+[![Greasy Fork](https://img.shields.io/badge/Greasy%20Fork-install-670000)](https://greasyfork.org/en/scripts/595545)
+[![version](https://img.shields.io/greasyfork/v/595545?label=version)](https://greasyfork.org/en/scripts/595545)
+[![installs](https://img.shields.io/greasyfork/dt/595545?label=installs)](https://greasyfork.org/en/scripts/595545)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
+
 > A userscript (Tampermonkey / Violentmonkey) that enhances GitHub code search results by displaying each repository's **Star count**, **file last-commit date**, and **repo update date**, with dual-date sorting, default-order restore, cross-page scan aggregation, and click-through to the matched file lines.
 
 [简体中文](./README.zh-CN.md) | English
