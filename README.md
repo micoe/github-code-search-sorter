@@ -15,6 +15,7 @@
 -  **Click to Jump to the Matched Lines** — Rows in the scan panel are clickable: they open the file on GitHub in a new tab and jump straight to the matched line range (e.g. `#L10-L20`).
 -  **GitHub Token Support** — Optionally set a Personal Access Token to raise the API rate limit from 60 to 5000 requests/hour.
 -  **Caching** — Repo and file-commit data is cached in `sessionStorage` (10-minute TTL) to reduce redundant API calls.
+-  **Bilingual, single file** — One copy of the logic with UI strings taken from a built-in dictionary: the language follows your browser (`zh*` → Chinese, otherwise English) and can be overridden from the menu. The name and description shown in your userscript manager are localized via `@name:zh-CN` / `@description:zh-CN`.
 
 ---
 
@@ -23,10 +24,13 @@
 1. Install a userscript manager extension:
    - [Violentmonkey](https://violentmonkey.github.io/) (recommended, open-source & lightweight)
    - [Tampermonkey](https://www.tampermonkey.net/) (also fully supported)
-2. Click one of the links below — your userscript manager will automatically open the install page:
-   - English UI: [Install `script.en.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.en.user.js)
-   - 中文界面: [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
+2. Click the link below — your userscript manager will automatically open the install page:
+   - [Install `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
 3. Visit `https://github.com/search?type=code` and run a code search.
+
+> **🌐 Language**: There is a single script file. The UI language **follows your browser language automatically** (`zh*` → Chinese, otherwise English), and you can override it any time via the script menu command **🌐 UI Language** (`zh` / `en` / `auto`).
+>
+> **⬆️ Upgrading from an older version**: if you previously installed the separate English file `script.en.user.js`, please uninstall it and install `script.user.js` instead (that file is no longer maintained).
 
 ---
 
@@ -64,6 +68,7 @@ In your userscript manager's script menu (Tampermonkey or Violentmonkey), the fo
 | 🗑️ Clear GitHub Token | Remove the saved Token. |
 | ℹ️ View Token Status | Show whether a Token is set and the current API rate limit. |
 | 📄 Set Scan Pages | Set how many pages to scan (1–20, default 3). |
+| 🌐 UI Language | Set the UI language: `zh` (Chinese) / `en` (English) / `auto` (follow browser, default). |
 
 ---
 
@@ -100,6 +105,7 @@ Use the menu command **📄 Set Scan Pages** to choose how many result pages are
 - Uses `GM_xmlhttpRequest` for cross-origin API requests.
 - Uses `sessionStorage` for caching (cleared when the tab closes).
 - Uses `MutationObserver` to handle GitHub's client-side navigation and dynamic result loading.
+- Bilingual support is a single script with a built-in `I18N` dictionary: the language is resolved as `GM` setting (`lang`) > `navigator.language`. Only the script header's `@name:zh-CN` / `@description:zh-CN` are selected by the userscript manager itself, for the name and description shown in its script list.
 
 ---
 

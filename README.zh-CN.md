@@ -15,6 +15,7 @@
 -  **点击跳转到匹配行** — 扫描面板中的每一行都可点击，会在新标签页打开该文件并直接定位到匹配的行号范围（如 `#L10-L20`）。
 -  **支持 GitHub Token** — 可配置 Personal Access Token，将 API 速率限制从 60 次/小时提升至 5000 次/小时。
 -  **本地缓存** — 仓库信息与文件提交信息缓存在 `sessionStorage` 中（TTL 10 分钟），减少重复 API 请求。
+-  **中英双语（单文件）** — 逻辑只有一份，界面文案取自内置字典：自动跟随浏览器语言（`zh*` → 中文，其余 → 英文），也可在菜单中手动指定；脚本在管理器列表中显示的名称与描述由 `@name:zh-CN` / `@description:zh-CN` 提供本地化。
 
 ---
 
@@ -23,10 +24,13 @@
 1. 安装用户脚本管理器扩展：
    - [Violentmonkey（暴力猴）](https://violentmonkey.github.io/)（推荐，开源轻量）
    - [Tampermonkey（油猴）](https://www.tampermonkey.net/)（同样完全兼容）
-2. 点击下方任一链接，脚本管理器会自动弹出安装页面：
-   - 中文界面: [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
-   - English UI: [Install `script.en.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.en.user.js)
+2. 点击下方链接安装（脚本管理器会自动弹出安装页面）：
+   - [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
 3. 访问 `https://github.com/search?type=code` 并进行代码搜索。
+
+> **🌐 语言说明**：脚本只有一个文件，界面语言**自动跟随浏览器语言**（`zh*` → 中文，其余 → 英文），也可随时通过脚本菜单命令 **🌐 界面语言** 手动指定为 `zh` / `en` / `auto`。
+>
+> **⬆️ 从旧版升级**：如果你之前安装的是独立的英文版 `script.en.user.js`，请卸载它，改装上面的 `script.user.js`（该文件已不再维护）。
 
 ---
 
@@ -64,6 +68,7 @@
 | 🗑️ 清除 GitHub Token | 清除已保存的 Token。 |
 | ℹ️ 查看 Token 状态 | 显示是否已设置 Token 以及当前 API 速率限制。 |
 | 📄 设置扫描页数 | 设置扫描的结果页数（1-20，默认 3）。 |
+| 🌐 界面语言 | 指定界面语言：`zh`（中文）/ `en`（English）/ `auto`（跟随浏览器，默认）。 |
 
 ---
 
@@ -100,6 +105,7 @@ Token 仅通过 `GM_setValue` 保存在本地浏览器中，不会上传到任�
 - 使用 `GM_xmlhttpRequest` 发起跨域 API 请求。
 - 使用 `sessionStorage` 做本地缓存（关闭标签页后清除）。
 - 使用 `MutationObserver` 监听 GitHub 客户端路由切换与动态内容加载。
+- 单一脚本 + 内置 `I18N` 字典实现双语：语言优先级为 `GM` 设置（`lang`）> `navigator.language`；仅脚本头部的 `@name:zh-CN` / `@description:zh-CN` 由脚本管理器按语言选择，用于管理器列表中的名称与描述。
 
 ---
 

@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         GitHub 代码搜索 Star & 更新时间排序助手
+// @name:en      GitHub Code Search Star & Updated Sorter
 // @namespace    https://github.com/micoe
-// @version      1.4.0
+// @version      2.0.0
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @description  在 GitHub 代码搜索结果中显示仓库 Star 数和文件/仓库更新时间（数据到达即实时渲染），支持双日期排序、恢复默认、跨页扫描汇总，点击可跳转到对应文件行
+// @description:en  Display repository Star count and file/repo update time (rendered live as data arrives) in GitHub code search results, with dual-date sorting, default-order restore, cross-page scan aggregation, and click to jump to the matching file line.
 // @author       micoe
 // @match        https://github.com/search*
 // @grant        GM_xmlhttpRequest
@@ -17,8 +19,133 @@
 // @downloadURL  https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js
 // ==/UserScript==
 
+// ⚠️ 维护提醒：上面的基准 @name（中文）必须与历史版本逐字保持一致——用户脚本管理器
+// 依赖它匹配已安装的脚本，一旦改动，老用户更新时可能被识别为"新脚本"而出现重复安装。
+// 其它语言一律通过 @name:xx / @description:xx 这类本地化标签提供。
+
 (function () {
   'use strict';
+
+  // ========== 多语言（i18n）==========
+  // 逻辑只有一份，界面文案按当前语言从字典取。
+  // 语言优先级：GM 设置 > 浏览器语言（zh* → 中文，其余 → 英文）。
+  // 管理器列表中显示的名称/描述由头部的 @name / @name:en 等本地化元数据标签负责。
+  const LANG_KEY = 'lang';
+  const LANG_OVERRIDE = GM_getValue(LANG_KEY, '');
+
+  const LANG = (() => {
+    if (LANG_OVERRIDE === 'zh' || LANG_OVERRIDE === 'en') return LANG_OVERRIDE;
+    const nav = String(navigator.language || navigator.userLanguage || 'en').toLowerCase();
+    return nav.indexOf('zh') === 0 ? 'zh' : 'en';
+  })();
+
+  const I18N = {
+    zh: {
+      langAutoSuffix: '（自动）',
+      menuSetToken: '⚙️ 设置 GitHub Token',
+      menuClearToken: '🗑️ 清除 GitHub Token',
+      menuTokenStatus: 'ℹ️ 查看 Token 状态',
+      menuScanPages: '📄 设置扫描页数',
+      menuLangLabel: (label) => '🌐 界面语言：' + label,
+      tokenPrompt: '请输入 GitHub Personal Access Token（仅需 public_repo 权限）：',
+      tokenClearConfirm: '确定要清除已保存的 GitHub Token 吗？',
+      tokenStatusSet: (prefix) => '已设置 Token：' + prefix + '...\nAPI 速率限制：5000 次/小时',
+      tokenStatusUnset: '未设置 Token。\n当前使用匿名 API，速率限制为 60 次/小时，建议设置 Token。',
+      scanPagesPrompt: (cur) => '扫描前几页？（1-20，当前 ' + cur + '）',
+      scanPagesSet: (n) => '已设置为扫描前 ' + n + ' 页',
+      scanPagesInvalid: '请输入 1-20 之间的整数',
+      langPrompt: (cur) => '输入语言 / Enter language：zh、en 或 auto（跟随浏览器）\n当前：' + cur,
+      langInvalid: '请输入 zh、en 或 auto',
+      badgeStarsTitle: 'Star 数',
+      badgeFileTitle: '文件最后更新',
+      badgeRepoTitle: '仓库最后更新',
+      sortStars: '按 Star 排序',
+      sortFileDate: '按文件更新日期排序',
+      sortRepoDate: '按仓库更新日期排序',
+      sortReset: '恢复默认排序',
+      scanButton: (n) => '📊 扫描 ' + n + ' 页并汇总',
+      panelTitle: '📊 扫描结果',
+      panelTitleCount: (files, repos) => '📊 扫描结果（' + files + ' 文件 / ' + repos + ' 仓库）',
+      panelSortStars: '⭐ Star',
+      panelSortFile: '📄 文件更新',
+      panelSortRepo: '🕒 仓库更新',
+      panelRescan: '重新扫描',
+      scanningPages: (p, total) => '正在扫描第 ' + p + ' / ' + total + ' 页…',
+      fetchingData: (done, total) => '正在获取 Star 与更新时间 ' + done + ' / ' + total + '…',
+      statsSummary: (pages, items, files, repos) =>
+        '共扫描 <b>' + pages + '</b> 页 · 结果项 <b>' + items + '</b> 个 · 唯一文件 <b>' +
+        files + '</b> · 唯一仓库 <b>' + repos + '</b>',
+      statsPageOk: (page, n) => 'P.' + page + ':' + n + '项',
+      statsPageError: (page) => 'P.' + page + ':✕',
+      scanningBusy: '正在扫描中，请稍候…',
+      notSearchPage: '当前页面不是搜索结果页',
+      noTokenWarning: (pages) =>
+        '未设置 GitHub Token，扫描 ' + pages + ' 页可能触发匿名 API 限流（60 次/小时）。\n' +
+        '每个文件还需要一次 Commits API 调用以获取文件更新日期，消耗会更大。\n' +
+        '建议先用菜单命令「⚙️ 设置 GitHub Token」配置 Token。\n\n是否继续？',
+      noFilesExtracted: '未从页面提取到任何文件。可能是 GitHub 页面结构变化或搜索结果为空。',
+      scanFailed: (msg) => '扫描失败：' + msg,
+    },
+    en: {
+      langAutoSuffix: ' (auto)',
+      menuSetToken: '⚙️ Set GitHub Token',
+      menuClearToken: '🗑️ Clear GitHub Token',
+      menuTokenStatus: 'ℹ️ View Token Status',
+      menuScanPages: '📄 Set Scan Pages',
+      menuLangLabel: (label) => '🌐 UI Language: ' + label,
+      tokenPrompt: 'Enter your GitHub Personal Access Token (public_repo scope only):',
+      tokenClearConfirm: 'Are you sure you want to clear the saved GitHub Token?',
+      tokenStatusSet: (prefix) => 'Token set: ' + prefix + '...\nAPI rate limit: 5000 requests/hour',
+      tokenStatusUnset: 'No Token set.\nUsing anonymous API with a rate limit of 60 requests/hour. Setting a Token is recommended.',
+      scanPagesPrompt: (cur) => 'How many pages to scan? (1-20, current ' + cur + ')',
+      scanPagesSet: (n) => 'Set to scan the first ' + n + ' pages',
+      scanPagesInvalid: 'Please enter an integer between 1 and 20',
+      langPrompt: (cur) => 'Enter language: zh, en, or auto (follow browser)\nCurrent: ' + cur,
+      langInvalid: 'Please enter zh, en or auto',
+      badgeStarsTitle: 'Star count',
+      badgeFileTitle: 'File last updated',
+      badgeRepoTitle: 'Repository last updated',
+      sortStars: 'Sort by Stars',
+      sortFileDate: 'Sort by File Date',
+      sortRepoDate: 'Sort by Repo Date',
+      sortReset: 'Restore Default Order',
+      scanButton: (n) => '📊 Scan ' + n + ' Pages & Aggregate',
+      panelTitle: '📊 Scan Results',
+      panelTitleCount: (files, repos) => '📊 Scan Results (' + files + ' files / ' + repos + ' repos)',
+      panelSortStars: '⭐ Stars',
+      panelSortFile: '📄 File Updated',
+      panelSortRepo: '🕒 Repo Updated',
+      panelRescan: 'Rescan',
+      scanningPages: (p, total) => 'Scanning page ' + p + ' / ' + total + '…',
+      fetchingData: (done, total) => 'Fetching Stars & dates ' + done + ' / ' + total + '…',
+      statsSummary: (pages, items, files, repos) =>
+        'Scanned <b>' + pages + '</b> pages · <b>' + items + '</b> result items · <b>' +
+        files + '</b> unique files · <b>' + repos + '</b> unique repos',
+      statsPageOk: (page, n) => 'P.' + page + ':' + n + ' items',
+      statsPageError: (page) => 'P.' + page + ':✕',
+      scanningBusy: 'Scanning in progress, please wait…',
+      notSearchPage: 'Current page is not a search results page',
+      noTokenWarning: (pages) =>
+        'No GitHub Token set. Scanning ' + pages + ' pages may trigger the anonymous API rate limit (60 requests/hour).\n' +
+        'Each file also requires an extra Commits API call to get its update date, so usage is higher.\n' +
+        'It is recommended to configure a Token first via the menu command "⚙️ Set GitHub Token".\n\nContinue?',
+      noFilesExtracted: 'No files were extracted from the pages. The GitHub page structure may have changed or the search results are empty.',
+      scanFailed: (msg) => 'Scan failed: ' + msg,
+    },
+  };
+
+  function t(key, ...args) {
+    const table = I18N[LANG] || I18N.en;
+    const v = table[key];
+    if (typeof v === 'function') return v(...args);
+    return v != null ? v : key;
+  }
+
+  // 当前语言标签（未手动指定时标注"自动"）
+  function langLabel() {
+    const base = LANG === 'zh' ? '中文' : 'English';
+    return LANG_OVERRIDE ? base : base + t('langAutoSuffix');
+  }
 
   // ========== Token 管理 ==========
   let GITHUB_TOKEN = GM_getValue('github_token', '');
@@ -36,11 +163,8 @@
     } catch (e) {}
   }
 
-  GM_registerMenuCommand('⚙️ 设置 GitHub Token', () => {
-    const token = prompt(
-      '请输入 GitHub Personal Access Token（仅需 public_repo 权限）：',
-      GITHUB_TOKEN
-    );
+  GM_registerMenuCommand(t('menuSetToken'), () => {
+    const token = prompt(t('tokenPrompt'), GITHUB_TOKEN);
     if (token !== null) {
       GITHUB_TOKEN = token.trim();
       GM_setValue('github_token', GITHUB_TOKEN);
@@ -49,8 +173,8 @@
     }
   });
 
-  GM_registerMenuCommand('🗑️ 清除 GitHub Token', () => {
-    if (confirm('确定要清除已保存的 GitHub Token 吗？')) {
+  GM_registerMenuCommand(t('menuClearToken'), () => {
+    if (confirm(t('tokenClearConfirm'))) {
       GITHUB_TOKEN = '';
       GM_setValue('github_token', '');
       clearRepoCache();
@@ -58,26 +182,42 @@
     }
   });
 
-  GM_registerMenuCommand('ℹ️ 查看 Token 状态', () => {
+  GM_registerMenuCommand(t('menuTokenStatus'), () => {
     if (GITHUB_TOKEN) {
-      alert('已设置 Token：' + GITHUB_TOKEN.slice(0, 8) + '...\nAPI 速率限制：5000 次/小时');
+      alert(t('tokenStatusSet', GITHUB_TOKEN.slice(0, 8)));
     } else {
-      alert('未设置 Token。\n当前使用匿名 API，速率限制为 60 次/小时，建议设置 Token。');
+      alert(t('tokenStatusUnset'));
     }
   });
 
-  GM_registerMenuCommand('📄 设置扫描页数', () => {
+  GM_registerMenuCommand(t('menuScanPages'), () => {
     const cur = GM_getValue('scan_pages', 3);
-    const n = prompt('扫描前几页？（1-20，当前 ' + cur + '）', cur);
+    const n = prompt(t('scanPagesPrompt', cur), cur);
     if (n !== null) {
       const num = parseInt(n, 10);
       if (num >= 1 && num <= 20) {
         GM_setValue('scan_pages', num);
         CONFIG.scanPages = num;
-        alert('已设置为扫描前 ' + num + ' 页');
+        alert(t('scanPagesSet', num));
       } else {
-        alert('请输入 1-20 之间的整数');
+        alert(t('scanPagesInvalid'));
       }
+    }
+  });
+
+  GM_registerMenuCommand(t('menuLangLabel', langLabel()), () => {
+    const cur = LANG_OVERRIDE || 'auto';
+    const input = prompt(t('langPrompt', cur), cur);
+    if (input === null) return;
+    const v = input.trim().toLowerCase();
+    if (v === 'auto' || v === '') {
+      GM_setValue(LANG_KEY, '');
+      location.reload();
+    } else if (v === 'zh' || v === 'en') {
+      GM_setValue(LANG_KEY, v);
+      location.reload();
+    } else {
+      alert(t('langInvalid'));
     }
   });
 
@@ -320,9 +460,9 @@
       opacity: 0.6;
     `;
     badge.innerHTML = `
-      <span class="ghcs-stars" title="Star 数">⭐ …</span>
-      <span class="ghcs-date-file" title="文件最后更新">📄 …</span>
-      <span class="ghcs-date-repo" title="仓库最后更新" style="display:none;">🕒 …</span>
+      <span class="ghcs-stars" title="${escapeHtml(t('badgeStarsTitle'))}">⭐ …</span>
+      <span class="ghcs-date-file" title="${escapeHtml(t('badgeFileTitle'))}">📄 …</span>
+      <span class="ghcs-date-repo" title="${escapeHtml(t('badgeRepoTitle'))}" style="display:none;">🕒 …</span>
     `;
     return badge;
   }
@@ -486,7 +626,7 @@
           active++;
           Promise.resolve()
             .then(() => worker(item))
-            .catch((e) => console.warn('[ghcs] 任务失败：', e))
+            .catch((e) => console.warn('[ghcs] task failed:', e))
             .then(() => {
               active--;
               done++;
@@ -656,23 +796,23 @@
     `;
 
     const btnStars = document.createElement('button');
-    btnStars.textContent = '按 Star 排序';
+    btnStars.textContent = t('sortStars');
     btnStars.style.cssText = btnStyle;
 
     const btnFileDate = document.createElement('button');
-    btnFileDate.textContent = '按文件更新日期排序';
+    btnFileDate.textContent = t('sortFileDate');
     btnFileDate.style.cssText = btnStyle;
 
     const btnRepoDate = document.createElement('button');
-    btnRepoDate.textContent = '按仓库更新日期排序';
+    btnRepoDate.textContent = t('sortRepoDate');
     btnRepoDate.style.cssText = btnStyle;
 
     const btnReset = document.createElement('button');
-    btnReset.textContent = '恢复默认排序';
+    btnReset.textContent = t('sortReset');
     btnReset.style.cssText = btnStyle + 'background-color: var(--bgColor-default, #fff);';
 
     const btnScan = document.createElement('button');
-    btnScan.textContent = '📊 扫描 ' + CONFIG.scanPages + ' 页并汇总';
+    btnScan.textContent = t('scanButton', CONFIG.scanPages);
     btnScan.style.cssText = btnStyle + 'background-color: #0969da; color: #fff; border-color: #0969da;';
 
     btnStars.addEventListener('click', () => toggleSort('stars'));
@@ -844,14 +984,14 @@
 
   async function scanAllPages() {
     if (isScanning) {
-      alert('正在扫描中，请稍候…');
+      alert(t('scanningBusy'));
       return;
     }
 
     const params = new URLSearchParams(location.search);
     const query = params.get('q');
     if (!query) {
-      alert('当前页面不是搜索结果页');
+      alert(t('notSearchPage'));
       return;
     }
 
@@ -860,11 +1000,7 @@
     showScanPanel(true);
 
     if (!GITHUB_TOKEN && CONFIG.scanPages > 2) {
-      const proceed = confirm(
-        '未设置 GitHub Token，扫描 ' + CONFIG.scanPages + ' 页可能触发匿名 API 限流（60 次/小时）。\n' +
-        '每个文件还需要一次 Commits API 调用以获取文件更新日期，消耗会更大。\n' +
-        '建议先用菜单命令「⚙️ 设置 GitHub Token」配置 Token。\n\n是否继续？'
-      );
+      const proceed = confirm(t('noTokenWarning', CONFIG.scanPages));
       if (!proceed) {
         isScanning = false;
         showScanPanel().style.display = 'none';
@@ -886,7 +1022,7 @@
       // 页面扫描：0-30%
       for (let p = 1; p <= CONFIG.scanPages; p++) {
         renderScanPanelProgress(
-          '正在扫描第 ' + p + ' / ' + CONFIG.scanPages + ' 页…',
+          t('scanningPages', p, CONFIG.scanPages),
           (p - 1) / CONFIG.scanPages * 30
         );
 
@@ -904,13 +1040,13 @@
             allRepos.add(repo);
           });
         } catch (e) {
-          console.warn('扫描第 ' + p + ' 页失败：', e);
+          console.warn('[ghcs] failed to scan page ' + p + ':', e);
           pageStats.push({ page: p, items: 0, unique: 0, error: true });
         }
       }
 
       if (fileToPages.size === 0) {
-        renderScanPanelError('未从页面提取到任何文件。可能是 GitHub 页面结构变化或搜索结果为空。');
+        renderScanPanelError(t('noFilesExtracted'));
         isScanning = false;
         return;
       }
@@ -956,7 +1092,7 @@
       const tick = () => {
         doneTasks++;
         renderScanPanelProgress(
-          '正在获取 Star 与更新时间 ' + doneTasks + ' / ' + totalTasks + '…',
+          t('fetchingData', doneTasks, totalTasks),
           30 + (totalTasks ? (doneTasks / totalTasks) * 70 : 70)
         );
         scheduleScanRerender();
@@ -992,7 +1128,7 @@
       clearTimeout(scanRerenderTimer);
       scanRerenderTimer = null;
       scanRerenderPending = false;
-      renderScanPanelError('扫描失败：' + e.message);
+      renderScanPanelError(t('scanFailed', e.message));
     } finally {
       isScanning = false;
     }
@@ -1033,15 +1169,15 @@
 
     panel.innerHTML = `
       <div class="ghcs-sp-header" style="display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);">
-        <span style="font-weight:600;">📊 扫描结果</span>
+        <span style="font-weight:600;">${t('panelTitle')}</span>
         <button class="ghcs-sp-close" style="background:transparent;border:none;cursor:pointer;font-size:16px;color:var(--fgColor-muted,#57606a);line-height:1;">✕</button>
       </div>
       <div class="ghcs-sp-stats" style="display:none;padding:6px 12px;font-size:11px;color:var(--fgColor-muted,#57606a);border-bottom:1px solid var(--borderColor-muted,#eaeef2);line-height:1.6;"></div>
       <div class="ghcs-sp-toolbar" style="display:flex;gap:6px;padding:8px 12px;border-bottom:1px solid var(--borderColor-default,#d0d7de);flex-wrap:wrap;">
-        <button class="ghcs-sp-sort-stars" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">⭐ Star</button>
-        <button class="ghcs-sp-sort-file" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">📄 文件更新</button>
-        <button class="ghcs-sp-sort-repo" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">🕒 仓库更新</button>
-        <button class="ghcs-sp-rescan" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;margin-left:auto;">重新扫描</button>
+        <button class="ghcs-sp-sort-stars" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">${t('panelSortStars')}</button>
+        <button class="ghcs-sp-sort-file" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">${t('panelSortFile')}</button>
+        <button class="ghcs-sp-sort-repo" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;">${t('panelSortRepo')}</button>
+        <button class="ghcs-sp-rescan" style="cursor:pointer;padding:3px 10px;font-size:12px;border-radius:6px;border:1px solid var(--borderColor-default,#d0d7de);background:var(--bgColor-muted,#f6f8fa);color:inherit;margin-left:auto;">${t('panelRescan')}</button>
       </div>
       <div class="ghcs-sp-progress" style="display:none;padding:8px 12px;border-bottom:1px solid var(--borderColor-default,#d0d7de);">
         <div class="ghcs-sp-progress-text" style="margin-bottom:4px;color:var(--fgColor-muted,#57606a);font-size:12px;"></div>
@@ -1089,7 +1225,7 @@
     panel.querySelector('.ghcs-sp-progress').style.display = 'block';
     panel.querySelector('.ghcs-sp-progress-text').textContent = '';
     panel.querySelector('.ghcs-sp-progress-bar').style.width = '0%';
-    panel.querySelector('.ghcs-sp-header span').textContent = '📊 扫描结果';
+    panel.querySelector('.ghcs-sp-header span').textContent = t('panelTitle');
     scanPanelData = [];
     scanPanelStats = [];
   }
@@ -1154,11 +1290,10 @@
       const totalItems = stats.reduce((s, x) => s + (x.items || 0), 0);
       const uniqueRepos = new Set(infos.map((i) => i.repo)).size;
       const perPage = stats.map((x) =>
-        'P.' + x.page + ':' + (x.error ? '✕' : x.items + '项')
+        x.error ? t('statsPageError', x.page) : t('statsPageOk', x.page, x.items)
       ).join('  ·  ');
       statsEl.innerHTML =
-        '<div>共扫描 <b>' + stats.length + '</b> 页 · 结果项 <b>' + totalItems +
-        '</b> 个 · 唯一文件 <b>' + infos.length + '</b> · 唯一仓库 <b>' + uniqueRepos + '</b></div>' +
+        '<div>' + t('statsSummary', stats.length, totalItems, infos.length, uniqueRepos) + '</div>' +
         '<div style="opacity:0.8;margin-top:2px;">' + perPage + '</div>';
       statsEl.style.display = 'block';
     } else {
@@ -1240,7 +1375,7 @@
 
     const uniqueRepos = new Set(infos.map((i) => i.repo)).size;
     panel.querySelector('.ghcs-sp-header span').textContent =
-      '📊 扫描结果（' + infos.length + ' 文件 / ' + uniqueRepos + ' 仓库）';
+      t('panelTitleCount', infos.length, uniqueRepos);
   }
 
   // ========== 监听页面变化 ==========
