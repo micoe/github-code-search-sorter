@@ -24,13 +24,14 @@
 1. Install a userscript manager extension:
    - [Violentmonkey](https://violentmonkey.github.io/) (recommended, open-source & lightweight)
    - [Tampermonkey](https://www.tampermonkey.net/) (also fully supported)
-2. Click the link below — your userscript manager will automatically open the install page:
-   - [Install `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
+2. Choose an installation method:
+   - **Greasy Fork (recommended, auto-updates)** — [Install GitHub Code Search Star & Updated Sorter](https://greasyfork.org/en/scripts/595545)
+   - **Direct from GitHub** — [Install `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
 3. Visit `https://github.com/search?type=code` and run a code search.
 
 > **🌐 Language**: There is a single script file. The UI language **follows your browser language automatically** (`zh*` → Chinese, otherwise English), and you can override it any time via the script menu command **🌐 UI Language** (`zh` / `en` / `auto`).
 >
-> **⬆️ Upgrading from an older version**: if you previously installed the separate English file `script.en.user.js`, please uninstall it and install `script.user.js` instead (that file is no longer maintained).
+> **⬆️ Upgrading from an older version**: if you previously installed the separate English file `script.en.user.js`, please uninstall it and install the script above instead (that file is no longer maintained).
 
 ---
 

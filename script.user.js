@@ -3,12 +3,13 @@
 // @name:zh-CN   GitHub 代码搜索 Star & 更新时间排序助手
 // @name:en      GitHub Code Search Star & Updated Sorter
 // @namespace    https://github.com/micoe
-// @version      2.0.1
+// @version      2.0.2
 // @icon         https://github.githubassets.com/favicons/favicon.svg
 // @description  在 GitHub 代码搜索结果中显示仓库 Star 数和文件/仓库更新时间（数据到达即实时渲染），支持双日期排序、恢复默认、跨页扫描汇总，点击可跳转到对应文件行
 // @description:zh-CN  在 GitHub 代码搜索结果中显示仓库 Star 数和文件/仓库更新时间（数据到达即实时渲染），支持双日期排序、恢复默认、跨页扫描汇总，点击可跳转到对应文件行
 // @description:en  Display repository Star count and file/repo update time (rendered live as data arrives) in GitHub code search results, with dual-date sorting, default-order restore, cross-page scan aggregation, and click to jump to the matching file line.
 // @author       micoe
+// @license      MIT
 // @match        https://github.com/search*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue

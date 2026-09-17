@@ -24,13 +24,14 @@
 1. 安装用户脚本管理器扩展：
    - [Violentmonkey（暴力猴）](https://violentmonkey.github.io/)（推荐，开源轻量）
    - [Tampermonkey（油猴）](https://www.tampermonkey.net/)（同样完全兼容）
-2. 点击下方链接安装（脚本管理器会自动弹出安装页面）：
-   - [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
+2. 选择一种安装方式：
+   - **Greasy Fork（推荐，可自动更新）** — [安装 GitHub 代码搜索 Star & 更新时间排序助手](https://greasyfork.org/zh-CN/scripts/595545)
+   - **GitHub 直装** — [安装 `script.user.js`](https://raw.githubusercontent.com/micoe/github-code-search-sorter/refs/heads/main/script.user.js)
 3. 访问 `https://github.com/search?type=code` 并进行代码搜索。
 
 > **🌐 语言说明**：脚本只有一个文件，界面语言**自动跟随浏览器语言**（`zh*` → 中文，其余 → 英文），也可随时通过脚本菜单命令 **🌐 界面语言** 手动指定为 `zh` / `en` / `auto`。
 >
-> **⬆️ 从旧版升级**：如果你之前安装的是独立的英文版 `script.en.user.js`，请卸载它，改装上面的 `script.user.js`（该文件已不再维护）。
+> **⬆️ 从旧版升级**：如果你之前安装的是独立的英文版 `script.en.user.js`，请卸载它，改装上面的脚本（该文件已不再维护）。
 
 ---
 
